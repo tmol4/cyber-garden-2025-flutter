@@ -34,7 +34,7 @@
 
 
 + (PGNBrainBit2AmplifierParamNative *) PGNFBB2AmplifierParamFromNT:(NTBrainBit2AmplifierParam *) param;
-+ (NTBrainBit2AmplifierParam *) NTBB2AmplifierParamFromPGNF:(PGNBrainBit2AmplifierParamNative *) param;
+// + (NTBrainBit2AmplifierParam *) NTBB2AmplifierParamFromPGNF:(PGNBrainBit2AmplifierParamNative *) param;
 
 + (PGNFSensorFamily) PGNFSensorFamilyFromNT:(NTSensorFamily) param;
 + (NTSensorFamily) NTSensorFamilyFromPGNF:(PGNFSensorFamily) param;

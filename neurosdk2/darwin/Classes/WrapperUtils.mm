@@ -131,16 +131,16 @@
                      current:(PGNFGenCurrent)param.Current];
 }
 
-+ (NTBrainBit2AmplifierParam *)NTBB2AmplifierParamFromPGNF:
-    (PGNBrainBit2AmplifierParamNative *)param {
-    NTBrainBit2AmplifierParam *res = [[NTBrainBit2AmplifierParam alloc] init];
-    [res.ChSignalMode addObjectsFromArray:param.chSignalMode];
-    [res.ChResistUse addObjectsFromArray:param.chResistUse];
-    [res.ChGain addObjectsFromArray:param.chGain];
-    res.Current = (NTGenCurrent)param.current;
+// + (NTBrainBit2AmplifierParam *)NTBB2AmplifierParamFromPGNF:
+//     (PGNBrainBit2AmplifierParamNative *)param {
+//     NTBrainBit2AmplifierParam *res = [[NTBrainBit2AmplifierParam alloc] init];
+//     [res.ChSignalMode addObjectsFromArray:param.chSignalMode];
+//     [res.ChResistUse addObjectsFromArray:param.chResistUse];
+//     [res.ChGain addObjectsFromArray:param.chGain];
+//     res.Current = (NTGenCurrent)param.current;
 
-    return res;
-}
+//     return res;
+// }
 
 + (PGNFSensorFamily)PGNFSensorFamilyFromNT:(NTSensorFamily)param {
     switch (param) {
@@ -211,7 +211,7 @@
         case NTSensorSamplingFrequencyUnsupported:
             return PGNFSensorSamplingFrequencyUnsupported;
         default:
-            break;
+            return PGNFSensorSamplingFrequencyUnsupported;
     }
 }
 

@@ -1,4 +1,4 @@
-import 'package:app/flutter.dart';
+import 'package:app_ui/src/flutter.dart';
 
 class _InverseCenterOptically extends CenterOptically {
   const _InverseCenterOptically({

@@ -5,6 +5,7 @@ version: 0.1.0
 
 workspace:
   - app_lints
+  - app_logic
   - app_ui
   - device_info_ffi
   - device_info_ffi/example
@@ -29,6 +30,8 @@ dependencies:
 
   app_ui:
     path: app_ui
+  app_logic:
+    path: app_logic
   device_info_ffi:
     path: device_info_ffi
   layout:

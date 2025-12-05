@@ -1,6 +1,5 @@
 import 'package:app/flutter.dart';
 import 'package:app/main.dart';
-import 'package:app/theme/theme.dart';
 import 'package:app_ui/app_ui.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';

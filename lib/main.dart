@@ -18,14 +18,15 @@ void main(List<String> arguments) async {
 
   final windowOptions = const WindowOptions(
     title: "Cyber Garden 2025",
-    size: const Size(360.0, 664.0),
+    minimumSize: Size(360.0, 640.0),
+    size: Size(412.0, 664.0),
     // titleBarStyle: TitleBarStyle.hidden,
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await Future.value([
       // windowManager.setPreventClose(true),
       windowManager.setMaximizable(false),
-      windowManager.setResizable(false),
+      windowManager.setResizable(true),
     ]);
     await windowManager.show();
   });

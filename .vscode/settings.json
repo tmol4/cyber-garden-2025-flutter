@@ -9,5 +9,6 @@
   "[json][jsonc]": {
     "editor.defaultFormatter": "vscode.json-language-features",
     "editor.formatOnSave": true
-  }
+  },
+  "java.configuration.updateBuildConfiguration": "disabled",
 }

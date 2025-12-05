@@ -6,7 +6,7 @@ issue_tracker: https://gitlab.com/brainbit-inc/brainbit-sdk/-/issues
 resolution: workspace
 
 environment:
-  sdk: ^3.10.3
+  sdk: ^3.10.0
   flutter: '>=3.22.0'
 
 dependencies:

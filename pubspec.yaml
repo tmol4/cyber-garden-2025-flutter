@@ -5,6 +5,7 @@ version: 0.1.0
 
 workspace:
   - app_lints
+  - app_ui
   - device_info_ffi
   - device_info_ffi/example
   - layout
@@ -14,7 +15,7 @@ workspace:
   - shapes
 
 environment:
-  sdk: ^3.10.3
+  sdk: ^3.10.0
   flutter: ">=3.38.0"
 
 dependencies:
@@ -26,6 +27,8 @@ dependencies:
 
   # Path dependencies
 
+  app_ui:
+    path: app_ui
   device_info_ffi:
     path: device_info_ffi
   layout:

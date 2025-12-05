@@ -27,15 +27,17 @@ class CallibriController {
 
   Scanner? _scanner;
 
-  Future<void> _createScanner() async {
-    if (_scanner != null) return;
-    final scanner = await Scanner.create(_filters);
+  void _onSensorsChanged(List<FSensorInfo> data) {}
+
+  Future<Scanner> _ensureScanner() async {
+    if (_scanner case final scanner?) return scanner;
+    final scanner = await Scanner.create(_filters)
+      ..sensorsStream.listen(_onSensorsChanged);
     _scanner = scanner;
+    return scanner;
   }
 
-  void search({required Duration duration}) async {
-    final scanner = await Scanner.create(_filters);
-  }
+  void search({required Duration duration}) async {}
 
   void dispose() {}
 

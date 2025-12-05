@@ -1,3 +1,5 @@
+library;
+
 export 'src/utils.dart';
 export 'package:app_ui/src/custom_app_bar.dart';
 export 'package:app_ui/src/custom_list.dart';

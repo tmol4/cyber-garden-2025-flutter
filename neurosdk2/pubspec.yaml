@@ -1,0 +1,36 @@
+name: neurosdk2
+description: "Flutter wrapper for NeuroSDK2. Neurosdk is a powerful tool for working with neuro-sensors BrainBit, BrainBit2, BrainBitBlack, Callibri and Kolibri."
+version: 1.0.20
+homepage: https://sdk.brainbit.com/
+issue_tracker: https://gitlab.com/brainbit-inc/brainbit-sdk/-/issues
+resolution: workspace
+
+environment:
+  sdk: ^3.10.3
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  pigeon: ^26.1.4
+  flutter_lints: ^6.0.0
+  meta: ^1.17.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.neurosdk2.flutter_impl
+        pluginClass: Neurosdk2Plugin
+      ios:
+        pluginClass: Neurosdk2Plugin
+        sharedDarwinSource: true
+      # linux:
+      #   pluginClass: Neurosdk2Plugin
+      macos:
+        pluginClass: Neurosdk2Plugin
+        sharedDarwinSource: true
+      windows:
+        pluginClass: Neurosdk2PluginCApi

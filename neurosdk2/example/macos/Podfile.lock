@@ -1,0 +1,23 @@
+PODS:
+  - FlutterMacOS (1.0.0)
+  - neurosdk2 (1.0.6):
+    - Flutter
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - neurosdk2 (from `Flutter/ephemeral/.symlinks/plugins/neurosdk2/darwin`)
+
+EXTERNAL SOURCES:
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  neurosdk2:
+    :path: Flutter/ephemeral/.symlinks/plugins/neurosdk2/darwin
+
+SPEC CHECKSUMS:
+  FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
+  neurosdk2: 25eb5f88371178e0361429d90666c428239ef9a1
+
+PODFILE CHECKSUM: 236401fc2c932af29a9fcf0e97baeeb2d750d367
+
+COCOAPODS: 1.16.2

@@ -1,0 +1,99 @@
+name: app
+description: "A new Flutter project."
+publish_to: none
+version: 0.1.0
+
+workspace:
+  - app_lints
+  - device_info_ffi
+  - device_info_ffi/example
+  - layout
+  - material
+  - neurosdk2
+  - neurosdk2/example
+  - shapes
+
+environment:
+  sdk: ^3.10.3
+  flutter: ">=3.38.0"
+
+dependencies:
+
+  # SDK dependencies
+
+  flutter:
+    sdk: flutter
+
+  # Path dependencies
+
+  device_info_ffi:
+    path: device_info_ffi
+  layout:
+    path: layout
+  material:
+    path: material
+  neurosdk2:
+    path: neurosdk2
+
+  # Hosted depdencies
+
+  bixat_key_mouse: ^1.0.3
+  meta: ^1.17.0
+  material_symbols_icons: ^4.2892.0
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.9.0
+  flutter_markdown_plus: ^1.0.5
+  markdown: ^7.3.0
+  share_plus: ^12.0.1
+  url_launcher: ^6.3.2
+  skeletonizer: ^2.1.1
+  flutter_svg: ^2.2.3
+  vector_graphics: ^1.1.19
+  vector_math: ^2.2.0
+  collection: ^1.19.1
+  async: ^2.13.0
+  syntax_highlight: ^0.5.0
+  talker_flutter: ^5.1.3
+  talker_dio_logger: ^5.1.3
+  dio: ^5.9.0
+  http: ^1.6.0
+  tray_manager: ^0.5.2
+  window_manager: ^0.5.1
+  provider: ^6.1.5+1
+
+dev_dependencies:
+
+  # SDK dependencies
+
+  flutter_test:
+    sdk: flutter
+
+  # Path dependencies
+
+  app_lints:
+    path: app_lints
+
+  # Hosted dependencies
+
+  build_runner: ^2.10.4
+  json_serializable: ^6.11.2
+  freezed: ^3.2.3
+
+dependency_overrides:
+  material_color_utilities: ^0.13.0
+  meta: ^1.17.0
+  device_info_plus: ^12.3.0
+
+flutter:
+  uses-material-design: true
+  generate: false
+
+  assets:
+    - assets/images/
+  fonts:
+    - family: Google Sans Flex
+      fonts:
+        - asset: assets/fonts/googlesansflex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf
+    - family: Roboto Flex
+      fonts:
+        - asset: assets/fonts/robotoflex/RobotoFlex-VariableFont_GRAD,XOPQ,XTRA,YOPQ,YTAS,YTDE,YTFI,YTLC,YTUC,opsz,slnt,wdth,wght.ttf

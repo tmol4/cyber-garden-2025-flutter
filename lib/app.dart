@@ -1,4 +1,5 @@
 import 'package:app/flutter.dart';
+import 'package:app/main.dart';
 import 'package:app/theme/theme.dart';
 import 'package:app_ui/app_ui.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -92,13 +93,13 @@ class _AppState extends State<App> with WindowListener, TrayListener {
         typescaleTheme: typescaleTheme,
       ),
       builder: _buildHomeWrapper,
-      home: const app_ui_debug.mainPage(),
+      home: kDebugUi ? const app_ui_debug.mainPage() : const HomeView(),
     );
   }
 
   @override
   void onWindowClose() async {
-    await windowManager.hide();
+    // await windowManager.hide();
   }
 
   @override

@@ -5,7 +5,8 @@ import 'package:app/app.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-void main() async {
+const kDebugUi = bool.fromEnvironment("BORIS");
+void main(List<String> arguments) async {
   // Initialize binding singletons
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -22,7 +23,7 @@ void main() async {
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await Future.value([
-      windowManager.setPreventClose(true),
+      // windowManager.setPreventClose(true),
       windowManager.setMaximizable(false),
       windowManager.setResizable(false),
     ]);

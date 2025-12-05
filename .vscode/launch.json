@@ -2,7 +2,43 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "App (debug)",
+      "name": "Debug (debug)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "debug",
+      "toolArgs": [
+        "--dart-define",
+        "BORIS=true"
+      ],
+      "program": "lib/main.dart",
+      "args": [],
+    },
+    {
+      "name": "Debug (profile)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define",
+        "BORIS=true"
+      ],
+      "program": "lib/main.dart",
+      "args": [],
+    },
+    {
+      "name": "Debug (release)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "toolArgs": [
+        "--dart-define",
+        "BORIS=true"
+      ],
+      "program": "lib/main.dart",
+      "args": [],
+    },
+    {
+      "name": "Production  (debug)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "debug",
@@ -11,7 +47,7 @@
       "args": [],
     },
     {
-      "name": "App (profile)",
+      "name": "Production (profile)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "profile",
@@ -20,7 +56,7 @@
       "args": [],
     },
     {
-      "name": "App (release)",
+      "name": "Production (release)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "release",

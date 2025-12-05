@@ -1155,8 +1155,8 @@
                            error:(FlutterError *_Nullable *_Nonnull)error {
     @try {
         AFullSensor *sensor = [_sensors objectForKey:guid];
-        [sensor setAmplifierParamBB2:[WrapperUtils
-                                         NTBB2AmplifierParamFromPGNF:param]];
+        // [sensor setAmplifierParamBB2:[WrapperUtils
+        //                                  NTBB2AmplifierParamFromPGNF:param]];
     } @catch (NSException *exception) {
         NSLog(@"%@", exception.description);
         *error = [FlutterError

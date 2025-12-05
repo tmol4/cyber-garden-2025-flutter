@@ -363,8 +363,8 @@ static id GetNullableObjectAtIndex(NSArray<id> *array, NSInteger key) {
   PGNFCallibriStimulatorMAState *pigeonResult = [[PGNFCallibriStimulatorMAState alloc] init];
   PGNFCallibriStimulatorStateBox *boxedPGNFCallibriStimulatorState = GetNullableObjectAtIndex(list, 0);
   pigeonResult.stimulatorState = boxedPGNFCallibriStimulatorState.value;
-  PGNFCallibriStimulatorStateBox *boxedPGNFCallibriStimulatorState = GetNullableObjectAtIndex(list, 1);
-  pigeonResult.maState = boxedPGNFCallibriStimulatorState.value;
+  PGNFCallibriStimulatorStateBox *boxedPGNFCallibriMaState = GetNullableObjectAtIndex(list, 1);
+  pigeonResult.maState = boxedPGNFCallibriMaState.value;
   return pigeonResult;
 }
 + (nullable PGNFCallibriStimulatorMAState *)nullableFromList:(NSArray<id> *)list {
@@ -770,23 +770,23 @@ static id GetNullableObjectAtIndex(NSArray<id> *array, NSInteger key) {
       NSNumber *enumAsNumber = [self readValue];
       return enumAsNumber == nil ? nil : [[PGNFGenCurrentBox alloc] initWithValue:[enumAsNumber integerValue]];
     }
-    case 156: 
+    case 156:
       return [PGNFCallibriStimulatorMAState fromList:[self readValue]];
-    case 157: 
+    case 157:
       return [PGNFCallibriStimulationParams fromList:[self readValue]];
-    case 158: 
+    case 158:
       return [PGNFCallibriMotionAssistantParams fromList:[self readValue]];
-    case 159: 
+    case 159:
       return [PGNFCallibriMotionCounterParam fromList:[self readValue]];
-    case 160: 
+    case 160:
       return [PGNFSensorInfo fromList:[self readValue]];
-    case 161: 
+    case 161:
       return [PGNFParameterInfo fromList:[self readValue]];
-    case 162: 
+    case 162:
       return [PGNFSensorVersion fromList:[self readValue]];
-    case 163: 
+    case 163:
       return [PGNFEEGChannelInfo fromList:[self readValue]];
-    case 164: 
+    case 164:
       return [PGNBrainBit2AmplifierParamNative fromList:[self readValue]];
     default:
       return [super readValueOfType:type];

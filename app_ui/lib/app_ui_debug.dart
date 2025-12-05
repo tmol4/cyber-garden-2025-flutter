@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';  
+import 'package:flutter/widgets.dart';
 import "package:neurosdk2/neurosdk2.dart";
 
 class mainPage extends StatefulWidget {
@@ -10,8 +10,12 @@ class mainPage extends StatefulWidget {
 }
 
 class _mainPageState extends State<mainPage> {
-
-  List <String> strs = ["ssl://213.123.4525.23", "ssl://213.123.4525.23", "ssl://213.123.4525.23", "ssl://213.123.4525.23"];
+  List<String> strs = [
+    "ssl://213.123.4525.23",
+    "ssl://213.123.4525.23",
+    "ssl://213.123.4525.23",
+    "ssl://213.123.4525.23",
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -37,21 +41,31 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
   List<String> devices = [];
 
   void loadDevices() async {
-    Scanner sc = await Scanner.create([FSensorFamily.leCallibri, FSensorFamily.leKolibri]);
+    Scanner sc = await Scanner.create([
+      FSensorFamily.leCallibri,
+      FSensorFamily.leKolibri,
+    ]);
     await sc.start();
-    setState(() { 
+    setState(() {
       isLoading = true;
       devices = [];
     });
     await Future.delayed(Duration(seconds: 10));
     await sc.stop();
     List<FSensorInfo?> sensors = await sc.getSensors();
-    List <String> newDevs = [];
-    sensors.forEach((ls) => newDevs.add("${ls?.name} : ${ls?.address}"));
+    List<String> newDevs = ["ssl://123.321.23.21"];
+    // sensors.forEach((ls) => newDevs.add("${ls?.name} : ${ls?.address}"));
     setState(() {
       devices = newDevs;
       isLoading = false;
     });
+    if (devices.isNotEmpty) {
+      final currSens = await sc.createSensor(sensors.first!) as Callibri;
+      await currSens.connect();
+      currSens.signalDataStream.listen((data) {
+        // TODO: send data to Oleg and Roma
+      });
+    }
   }
 
   @override
@@ -68,18 +82,17 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
                 child: Text('Начать загрузку'),
               ),
             ],
-            
+
             if (isLoading) ...[
               CircularProgressIndicator(),
               SizedBox(height: 20),
-              Text('Загрузка... 10 секунд'),
+              Text('Загрузка... (всего 10 секунд)'),
             ],
-            
-            if (devices.isNotEmpty) ...[
+            if (devices.isNotEmpty)  ...[
               SizedBox(height: 20),
-              ...devices.map((device) => 
-                Card(child: ListTile(title: Text(device)))
-              ).toList(),
+              ...devices
+                  .map((device) => Card(child: ListTile(title: Text(device))))
+                  .toList(),
               SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () {
@@ -108,19 +121,15 @@ class cardSocket extends StatefulWidget {
 }
 
 class _cardSocketState extends State<cardSocket> {
-  
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: .all(10),
       child: Material(
         color: Colors.blue,
-        child: Padding(
-          padding: .all(10),
-          child: widget.child ,
-        ),
+        child: Padding(padding: .all(10), child: widget.child),
         borderRadius: .circular(28),
-      )
+      ),
     );
   }
 }

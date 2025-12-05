@@ -1,7 +1,5 @@
 library;
 
-import 'package:app/flutter.dart';
-
 // SDK packages
 
 export 'package:flutter/foundation.dart';
@@ -71,4 +69,3 @@ export 'package:material_symbols_icons/material_symbols_icons.dart';
 
 export 'package:layout/layout.dart';
 export 'package:material/material.dart';
-export 'package:app_ui/app_ui.dart';

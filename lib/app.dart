@@ -1,5 +1,6 @@
 import 'package:app/flutter.dart';
 import 'package:app/theme/theme.dart';
+import 'package:app_ui/app_ui.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -22,6 +23,74 @@ class _AppState extends State<App> with WindowListener, TrayListener {
       variant: .vibrant,
       specVersion: .spec2025,
       platform: .phone,
+    );
+  }
+
+  Widget _buildColorTheme(BuildContext context, Widget child) {
+    final brightness = MediaQuery.platformBrightnessOf(context);
+    final highContrast = MediaQuery.highContrastOf(context);
+    return ColorTheme(
+      data: _createColorTheme(
+        brightness: brightness,
+        highContrast: highContrast,
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildSpringTheme(BuildContext context, Widget child) =>
+      SpringTheme(data: const SpringThemeData.expressive(), child: child);
+
+  Widget _buildAppWrapper({
+    Widget? child,
+    required Widget Function(BuildContext context, Widget? child) builder,
+  }) => CombiningBuilder(
+    builders: [_buildColorTheme, _buildSpringTheme],
+    child: Builder(builder: (context) => builder(context, child)),
+  );
+
+  Widget _buildHomeWrapper(BuildContext context, Widget? child) =>
+      child ?? const SizedBox.shrink();
+
+  Widget _buildMaterialApp(BuildContext context) {
+    final shapeTheme = ShapeTheme.of(context);
+    final stateTheme = StateTheme.of(context);
+    final elevationTheme = ElevationTheme.of(context);
+    final typescaleTheme = TypescaleTheme.of(context);
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: "Cyber Garden 2025",
+      themeMode: .system,
+      theme: LegacyThemeFactory.createTheme(
+        colorTheme: _createColorTheme(brightness: .light, highContrast: false),
+        elevationTheme: elevationTheme,
+        shapeTheme: shapeTheme,
+        stateTheme: stateTheme,
+        typescaleTheme: typescaleTheme,
+      ),
+      darkTheme: LegacyThemeFactory.createTheme(
+        colorTheme: _createColorTheme(brightness: .dark, highContrast: false),
+        elevationTheme: elevationTheme,
+        shapeTheme: shapeTheme,
+        stateTheme: stateTheme,
+        typescaleTheme: typescaleTheme,
+      ),
+      highContrastTheme: LegacyThemeFactory.createTheme(
+        colorTheme: _createColorTheme(brightness: .light, highContrast: true),
+        elevationTheme: elevationTheme,
+        shapeTheme: shapeTheme,
+        stateTheme: stateTheme,
+        typescaleTheme: typescaleTheme,
+      ),
+      highContrastDarkTheme: LegacyThemeFactory.createTheme(
+        colorTheme: _createColorTheme(brightness: .dark, highContrast: true),
+        elevationTheme: elevationTheme,
+        shapeTheme: shapeTheme,
+        stateTheme: stateTheme,
+        typescaleTheme: typescaleTheme,
+      ),
+      builder: _buildHomeWrapper,
+      home: HomeView(),
     );
   }
 
@@ -78,80 +147,6 @@ class _AppState extends State<App> with WindowListener, TrayListener {
 
   @override
   Widget build(BuildContext context) {
-    final shapeTheme = ShapeTheme.of(context);
-    final stateTheme = StateTheme.of(context);
-    final elevationTheme = ElevationTheme.of(context);
-    final typescaleTheme = TypescaleTheme.of(context);
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: "Cyber Garden 2025",
-      themeMode: .system,
-      theme: LegacyThemeFactory.createTheme(
-        colorTheme: _createColorTheme(brightness: .light, highContrast: false),
-        elevationTheme: elevationTheme,
-        shapeTheme: shapeTheme,
-        stateTheme: stateTheme,
-        typescaleTheme: typescaleTheme,
-      ),
-      darkTheme: LegacyThemeFactory.createTheme(
-        colorTheme: _createColorTheme(brightness: .dark, highContrast: false),
-        elevationTheme: elevationTheme,
-        shapeTheme: shapeTheme,
-        stateTheme: stateTheme,
-        typescaleTheme: typescaleTheme,
-      ),
-      highContrastTheme: LegacyThemeFactory.createTheme(
-        colorTheme: _createColorTheme(brightness: .light, highContrast: true),
-        elevationTheme: elevationTheme,
-        shapeTheme: shapeTheme,
-        stateTheme: stateTheme,
-        typescaleTheme: typescaleTheme,
-      ),
-      highContrastDarkTheme: LegacyThemeFactory.createTheme(
-        colorTheme: _createColorTheme(brightness: .dark, highContrast: true),
-        elevationTheme: elevationTheme,
-        shapeTheme: shapeTheme,
-        stateTheme: stateTheme,
-        typescaleTheme: typescaleTheme,
-      ),
-
-      home: TestPage(),
-    );
-  }
-}
-
-class TestPage extends StatefulWidget {
-  const TestPage({super.key});
-
-  @override
-  State<TestPage> createState() => _TestPageState();
-}
-
-class _TestPageState extends State<TestPage> {
-  @override
-  Widget build(BuildContext context) {
-    final colorTheme = ColorTheme.of(context);
-    final shapeTheme = ShapeTheme.of(context);
-    final stateTheme = StateTheme.of(context);
-    final elevationTheme = ElevationTheme.of(context);
-    final typescaleTheme = TypescaleTheme.of(context);
-    return Scaffold(
-      body: Align.center(
-        child: FilledButton(
-          style: LegacyThemeFactory.createButtonStyle(
-            colorTheme: colorTheme,
-            elevationTheme: elevationTheme,
-            shapeTheme: shapeTheme,
-            stateTheme: stateTheme,
-            typescaleTheme: typescaleTheme,
-            size: .extraLarge,
-            shape: .square,
-            color: .outlined,
-          ),
-          onPressed: () {},
-          child: Text("CLICK"),
-        ),
-      ),
-    );
+    ;
   }
 }

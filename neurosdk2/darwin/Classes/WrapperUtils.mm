@@ -211,7 +211,7 @@
         case NTSensorSamplingFrequencyUnsupported:
             return PGNFSensorSamplingFrequencyUnsupported;
         default:
-            break;
+            return PGNFSensorSamplingFrequencyUnsupported;
     }
 }
 

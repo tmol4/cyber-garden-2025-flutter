@@ -4,6 +4,8 @@ import 'package:app_ui/app_ui.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:app_ui/app_ui_debug.dart' as app_ui_debug;
+
 class App extends StatefulWidget {
   const App({super.key});
 
@@ -90,7 +92,7 @@ class _AppState extends State<App> with WindowListener, TrayListener {
         typescaleTheme: typescaleTheme,
       ),
       builder: _buildHomeWrapper,
-      home: HomeView(),
+      home: const app_ui_debug.mainPage(),
     );
   }
 
@@ -147,6 +149,8 @@ class _AppState extends State<App> with WindowListener, TrayListener {
 
   @override
   Widget build(BuildContext context) {
-    ;
+    return _buildAppWrapper(
+      builder: (context, child) => _buildMaterialApp(context),
+    );
   }
 }

@@ -6,12 +6,15 @@ export 'src/legacy.dart';
 export 'src/utils.dart';
 
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:app_ui/src/flutter.dart';
 import 'package:neurosdk2/neurosdk2.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+const _scannerSensorFilters = <FSensorFamily>[.leCallibri, .leKolibri];
 
 class CallibriController {
   CallibriController();
@@ -37,7 +40,7 @@ class CallibriController {
   Future<Scanner> _ensureScanner() async {
     if (_scanner case final scanner?) return scanner;
 
-    final scanner = await Scanner.create(_filters);
+    final scanner = await Scanner.create(_scannerSensorFilters);
     scanner.sensorsStream.listen(_onSensorsChanged);
 
     return _scanner = scanner;
@@ -70,12 +73,201 @@ class CallibriController {
     await _scanner?.stop();
     _scanner?.dispose();
   }
-
-  static const _filters = <FSensorFamily>[.leCallibri, .leKolibri];
 }
 
-Future<void> _isolateStart(Scanner message) async {
-  await message.start();
+class IsolateCallibriController {
+  CallibriWorker? _worker;
+
+  StreamSubscription<bool>? _isScanningSubscription;
+  final _isScanningController = BehaviorSubject<bool>.seeded(false);
+  Stream<bool> get isScanningStream => _isScanningController.stream;
+
+  StreamSubscription<List<FSensorInfo>>? _sensorsSubscription;
+  final _sensorsController = StreamController<List<FSensorInfo>>.broadcast();
+  Stream<List<FSensorInfo>> get sensorsStream => _sensorsController.stream;
+
+  Future<CallibriWorker> _ensureWorker() async {
+    if (_worker case final worker?) return worker;
+    final worker = await CallibriWorker.spawn();
+    _isScanningSubscription = worker.isScanningStream.listen((event) {
+      _isScanningController.add(event);
+    });
+    return _worker = worker;
+  }
+
+  Future<void> start() async {
+    final worker = await _ensureWorker();
+    await worker.start();
+  }
+
+  Future<void> stop() async {
+    final worker = await _ensureWorker();
+    await worker.stop();
+  }
+
+  Future<void> dispose() async {
+    if (_worker case final worker?) {
+      _isScanningSubscription?.cancel();
+      _isScanningController.close();
+
+      _sensorsSubscription?.cancel();
+      _sensorsController.close();
+
+      worker.close();
+    }
+  }
+}
+
+abstract class _CallibriWorkerMessage {
+  const _CallibriWorkerMessage();
+}
+
+abstract class _CallibriWorkerIdentifiableMessage
+    extends _CallibriWorkerMessage {
+  const _CallibriWorkerIdentifiableMessage({required this.id});
+
+  final int id;
+}
+
+class _CallibriWorkerSpawnCommand extends _CallibriWorkerMessage {
+  const _CallibriWorkerSpawnCommand({
+    required this.rootIsolateToken,
+    required this.sendPort,
+  });
+
+  final RootIsolateToken rootIsolateToken;
+  final SendPort sendPort;
+}
+
+class _CallibriWorkerStartCommand extends _CallibriWorkerIdentifiableMessage {
+  const _CallibriWorkerStartCommand({required super.id});
+}
+
+class _CallibriWorkerStartResponse extends _CallibriWorkerIdentifiableMessage {
+  const _CallibriWorkerStartResponse({required super.id});
+}
+
+class _CallibriWorkerStopCommand extends _CallibriWorkerIdentifiableMessage {
+  const _CallibriWorkerStopCommand({required super.id});
+}
+
+class _CallibriWorkerCloseCommand extends _CallibriWorkerMessage {
+  const _CallibriWorkerCloseCommand();
+}
+
+class CallibriWorker {
+  CallibriWorker._(this._responses, this._commands) {
+    _responses.listen(_handleResponsesFromIsolate);
+  }
+
+  final SendPort _commands;
+  final ReceivePort _responses;
+
+  final Map<int, Completer<Object?>> _activeRequests =
+      <int, Completer<Object?>>{};
+  int _id = 0;
+
+  bool _closed = false;
+
+  final _isScanningController = BehaviorSubject<bool>.seeded(false);
+  Stream<bool> get isScanningStream => _isScanningController.stream;
+
+  void _handleResponsesFromIsolate(Object? response) {
+    switch (response) {
+      case _CallibriWorkerStartResponse(:final id):
+        final completer = _activeRequests.remove(id)!;
+        completer.complete();
+      default:
+    }
+
+    if (_closed && _activeRequests.isEmpty) _responses.close();
+  }
+
+  Future<void> start() async {
+    final completer = Completer<void>.sync();
+    final id = _id++;
+    _activeRequests[id] = completer;
+    _commands.send(_CallibriWorkerStartCommand(id: id));
+    return await completer.future;
+  }
+
+  Future<void> stop() async {}
+
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _commands.send(const _CallibriWorkerCloseCommand());
+    if (_activeRequests.isEmpty) {
+      _responses.close();
+    }
+  }
+
+  static void _startRemoteIsolate(_CallibriWorkerSpawnCommand initialCommand) {
+    final _CallibriWorkerSpawnCommand(:rootIsolateToken, :sendPort) =
+        initialCommand;
+
+    BackgroundIsolateBinaryMessenger.ensureInitialized(rootIsolateToken);
+
+    final receivePort = ReceivePort();
+    sendPort.send(receivePort.sendPort);
+
+    Scanner? scannerOrNull;
+
+    Future<Scanner> ensureScanner() async {
+      if (scannerOrNull case final scanner?) return scanner;
+      final scanner = await Scanner.create(_scannerSensorFilters);
+      return scannerOrNull = scanner;
+    }
+
+    void handleCommandsToIsolate(Object? command) async {
+      print(command);
+      switch (command) {
+        case _CallibriWorkerStartCommand(:final id):
+          final scanner = await ensureScanner();
+          await scanner.start();
+          sendPort.send(_CallibriWorkerStartResponse(id: id));
+        case _CallibriWorkerStopCommand():
+          final scanner = await ensureScanner();
+          await scanner.stop();
+        case _CallibriWorkerCloseCommand():
+          receivePort.close();
+        default:
+      }
+    }
+
+    receivePort.listen(handleCommandsToIsolate);
+  }
+
+  static Future<CallibriWorker> spawn() async {
+    final initPort = RawReceivePort();
+    final connection = Completer<(ReceivePort, SendPort)>.sync();
+
+    void handler(SendPort commandPort) {
+      connection.complete((
+        ReceivePort.fromRawReceivePort(initPort),
+        commandPort,
+      ));
+    }
+
+    initPort.handler = handler;
+
+    try {
+      await Isolate.spawn(
+        _startRemoteIsolate,
+        _CallibriWorkerSpawnCommand(
+          rootIsolateToken: RootIsolateToken.instance!,
+          sendPort: initPort.sendPort,
+        ),
+      );
+    } on Object {
+      initPort.close();
+      rethrow;
+    }
+
+    final (receivePort, sendPort) = await connection.future;
+
+    return CallibriWorker._(receivePort, sendPort);
+  }
 }
 
 class HomeView extends StatefulWidget {
@@ -342,12 +534,12 @@ class DevicesView extends StatefulWidget {
 }
 
 class _DevicesViewState extends State<DevicesView> {
-  late CallibriController _controller;
+  late IsolateCallibriController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = CallibriController();
+    _controller = IsolateCallibriController();
   }
 
   @override

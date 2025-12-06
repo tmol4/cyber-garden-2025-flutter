@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import "package:neurosdk2/neurosdk2.dart";
+import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import "chart_draw.dart";
+import 'dart:math';
 
 class mainPage extends StatefulWidget {
   const mainPage({super.key});
@@ -35,11 +39,11 @@ class SimpleDeviceLoader extends StatefulWidget {
   @override
   _SimpleDeviceLoaderState createState() => _SimpleDeviceLoaderState();
 }
-
+Random random = Random();
 class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
   bool isLoading = false;
   List<String> devices = [];
-
+  List <Offset> dots = [];
   void loadDevices() async {
     Scanner sc = await Scanner.create([
       FSensorFamily.leCallibri,
@@ -52,35 +56,35 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
     });
     await Future.delayed(Duration(seconds: 2));
     await sc.stop();
-    List<FSensorInfo?> sensors = await sc.getSensors();
-    List<String> newDevs = [];
-    sensors.forEach((ls) => newDevs.add("${ls?.name} : ${ls?.address}"));
+    // List<FSensorInfo?> sensors = await sc.getSensors();
+    List<String> newDevs = ["123"];
+    // sensors.forEach((ls) => newDevs.add("${ls?.name} : ${ls?.address}"));
     setState(() {
       devices = newDevs;
       isLoading = false;
     });
-    if (devices.isNotEmpty) {
-      final currSens = await sc.createSensor(sensors.first!) as Callibri;
-      await currSens.connect();
-      double last_val = 0.0; 
-      double curr_val = 0.0;
-      currSens.signalDataStream.listen((data) {
-        // TODO: send data to Oleg and Roma
-        curr_val = data.map((e) => e.samples[0],).first * 1e6;
+    // if (devices.isNotEmpty) {
+    //   final currSens = await sc.createSensor(sensors.first!) as Callibri;
+    //   await currSens.connect();
+    //   double last_val = 0.0; 
+    //   double curr_val = 0.0;
+    //   currSens.signalDataStream.listen((data) {
+    //     // TODO: send data to Oleg and Roma
+    //     curr_val = data.map((e) => e.samples[0],).first * 1e6;
 
-        double delta = curr_val - last_val; 
-        print(delta);
+    //     double delta = curr_val - last_val; 
+    //     print(delta);
 
-        if (delta > 500 || delta < -500) {
-          print("OH YES!!!!!!");
-        }
+    //     if (delta > 500 || delta < -500) {
+    //       print("OH YES!!!!!!");
+    //     }
 
-        last_val = curr_val;
-      });
-      currSens.samplingFrequency.set(.hz1000);
-      currSens.signalType.set(.EMG);
-      currSens.execute(.startSignal);
-    }
+    //     last_val = curr_val;
+    //   });
+    //   currSens.samplingFrequency.set(.hz1000);
+    //   currSens.signalType.set(.EMG);
+    //   currSens.execute(.startSignal);
+    // }
   }
 
   @override
@@ -112,11 +116,17 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
               ElevatedButton(
                 onPressed: () {
                   setState(() {
-                    devices = [];
+                    // devices = [];
                     //TODO: stop work
+                    dots.add(Offset(-random.nextDouble() * 10,
+                                -random.nextDouble() * 10,));
                   });
                 },
                 child: Text('Выключить'),
+              ),
+              Container(
+                height: 300,
+                child: drawGraph(initialDots: dots),
               ),
             ],
           ],

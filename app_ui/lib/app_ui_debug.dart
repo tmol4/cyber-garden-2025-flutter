@@ -50,11 +50,11 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
       isLoading = true;
       devices = [];
     });
-    await Future.delayed(Duration(seconds: 10));
+    await Future.delayed(Duration(seconds: 2));
     await sc.stop();
     List<FSensorInfo?> sensors = await sc.getSensors();
-    List<String> newDevs = ["ssl://123.321.23.21"];
-    // sensors.forEach((ls) => newDevs.add("${ls?.name} : ${ls?.address}"));
+    List<String> newDevs = [];
+    sensors.forEach((ls) => newDevs.add("${ls?.name} : ${ls?.address}"));
     setState(() {
       devices = newDevs;
       isLoading = false;
@@ -62,9 +62,24 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
     if (devices.isNotEmpty) {
       final currSens = await sc.createSensor(sensors.first!) as Callibri;
       await currSens.connect();
+      double last_val = 0.0; 
+      double curr_val = 0.0;
       currSens.signalDataStream.listen((data) {
         // TODO: send data to Oleg and Roma
+        curr_val = data.map((e) => e.samples[0],).first * 1e6;
+
+        double delta = curr_val - last_val; 
+        print(delta);
+
+        if (delta > 500 || delta < -500) {
+          print("OH YES!!!!!!");
+        }
+
+        last_val = curr_val;
       });
+      currSens.samplingFrequency.set(.hz1000);
+      currSens.signalType.set(.EMG);
+      currSens.execute(.startSignal);
     }
   }
 

@@ -69,7 +69,7 @@ class _AppState extends State<App> with WindowListener, TrayListener {
     final typescaleTheme = TypescaleTheme.of(context);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: "Cyber Garden 2025",
+      title: "Cyber Garden School 2025",
       themeMode: _settings.themeMode,
       theme: LegacyThemeFactory.createTheme(
         colorTheme: _createColorTheme(brightness: .light, highContrast: false),

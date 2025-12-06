@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import "package:neurosdk2/neurosdk2.dart";
+import 'package:app_logic/src/callibri_readings.dart';
 
 class mainPage extends StatefulWidget {
   const mainPage({super.key});
@@ -39,6 +42,7 @@ class SimpleDeviceLoader extends StatefulWidget {
 class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
   bool isLoading = false;
   List<String> devices = [];
+  Callibri? currSens;
 
   void loadDevices() async {
     Scanner sc = await Scanner.create([
@@ -60,26 +64,23 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
       isLoading = false;
     });
     if (devices.isNotEmpty) {
-      final currSens = await sc.createSensor(sensors.first!) as Callibri;
-      await currSens.connect();
-      double last_val = 0.0; 
-      double curr_val = 0.0;
-      currSens.signalDataStream.listen((data) {
-        // TODO: send data to Oleg and Roma
-        curr_val = data.map((e) => e.samples[0],).first * 1e6;
+      currSens = await sc.createSensor(sensors.first!) as Callibri;
+      await currSens?.connect();
 
-        double delta = curr_val - last_val; 
-        print(delta);
-
-        if (delta > 500 || delta < -500) {
-          print("OH YES!!!!!!");
-        }
-
-        last_val = curr_val;
+      currSens?.memsDataStream.listen((data) {
+        final Iterable<Point3D> gyro = data.map((e) => e.gyroscope, );
+        callibri_readings.set_gyro(gyro);
       });
-      currSens.samplingFrequency.set(.hz1000);
-      currSens.signalType.set(.EMG);
-      currSens.execute(.startSignal);
+
+      currSens?.signalDataStream.listen((data) {
+        final Iterable<List<double>> signal = data.map((e) => e.samples, );
+        callibri_readings.set_muscle_signal(signal);
+      });
+      currSens?.samplingFrequency.set(.hz1000);
+      currSens?.signalType.set(.EMG);
+      
+      currSens?.execute(.startMEMS);
+      currSens?.execute(.startSignal);
     }
   }
 
@@ -114,6 +115,7 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
                   setState(() {
                     devices = [];
                     //TODO: stop work
+                    currSens?.disconnect();
                   });
                 },
                 child: Text('Выключить'),

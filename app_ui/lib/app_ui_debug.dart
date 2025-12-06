@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import "package:neurosdk2/neurosdk2.dart";
+import 'package:app_logic/src/callibri_readings.dart';
 
 class mainPage extends StatefulWidget {
   const mainPage({super.key});
@@ -62,24 +65,17 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
     if (devices.isNotEmpty) {
       final currSens = await sc.createSensor(sensors.first!) as Callibri;
       await currSens.connect();
-      double last_val = 0.0; 
-      double curr_val = 0.0;
-      currSens.signalDataStream.listen((data) {
+
+      currSens.memsDataStream.listen((data) {
         // TODO: send data to Oleg and Roma
-        curr_val = data.map((e) => e.samples[0],).first * 1e6;
 
-        double delta = curr_val - last_val; 
-        print(delta);
-
-        if (delta > 500 || delta < -500) {
-          print("OH YES!!!!!!");
-        }
-
-        last_val = curr_val;
+        Iterable<Point3D> acceleration_list = (data.map((e) => e.accelerometer, ));
+        callibri_readings.set_acceleration(acceleration_list);
+        
       });
-      currSens.samplingFrequency.set(.hz1000);
-      currSens.signalType.set(.EMG);
-      currSens.execute(.startSignal);
+      // currSens.samplingFrequency.set(.hz1000);
+      // currSens.signalType.set(.EMG);
+      currSens.execute(.startMEMS);
     }
   }
 

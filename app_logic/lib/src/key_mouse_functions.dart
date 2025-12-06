@@ -8,30 +8,30 @@ void move_mouse(int x,int y){
     );
 }
 void scroll_up(int z){
-  BixatKeyMouse.moveMouse(
-    x: 300,
-    y: -300,
-    coordinate: Coordinate.relative, // May be absolute version
-    );
-  BixatKeyMouse.pressMouseButton(
-  button: MouseButton.left,
-  direction: Direction.click,
-  );
+  // BixatKeyMouse.moveMouse(
+  //   x: 300,
+  //   y: -300,
+  //   coordinate: Coordinate.relative, // May be absolute version
+  //   );
+  // BixatKeyMouse.pressMouseButton(
+  // button: MouseButton.left,
+  // direction: Direction.click,
+  // );
   BixatKeyMouse.scrollMouse(
   distance: -z,
   axis: ScrollAxis.vertical,
   );
 }
 void scroll_dw(int z){
-  BixatKeyMouse.moveMouse(
-    x: 300,
-    y: -300,
-    coordinate: Coordinate.relative, // May be absolute version
-    );
-  BixatKeyMouse.pressMouseButton(
-  button: MouseButton.left,
-  direction: Direction.click,
-  );
+  // BixatKeyMouse.moveMouse(
+  //   x: 300,
+  //   y: -300,
+  //   coordinate: Coordinate.relative, // May be absolute version
+  //   );
+  // BixatKeyMouse.pressMouseButton(
+  // button: MouseButton.left,
+  // direction: Direction.click,
+  // );
   BixatKeyMouse.scrollMouse(
   distance: z,
   axis: ScrollAxis.vertical,

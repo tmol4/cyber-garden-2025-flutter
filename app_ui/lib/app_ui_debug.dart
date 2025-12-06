@@ -42,6 +42,7 @@ class SimpleDeviceLoader extends StatefulWidget {
 class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
   bool isLoading = false;
   List<String> devices = [];
+  Callibri? currSens;
 
   void loadDevices() async {
     Scanner sc = await Scanner.create([
@@ -63,19 +64,23 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
       isLoading = false;
     });
     if (devices.isNotEmpty) {
-      final currSens = await sc.createSensor(sensors.first!) as Callibri;
-      await currSens.connect();
+      currSens = await sc.createSensor(sensors.first!) as Callibri;
+      await currSens?.connect();
 
-      currSens.memsDataStream.listen((data) {
-        // TODO: send data to Oleg and Roma
-
-        Iterable<Point3D> acceleration_list = (data.map((e) => e.accelerometer, ));
-        callibri_readings.set_acceleration(acceleration_list);
-        
+      currSens?.memsDataStream.listen((data) {
+        final Iterable<Point3D> gyro = data.map((e) => e.gyroscope, );
+        callibri_readings.set_gyro(gyro);
       });
-      // currSens.samplingFrequency.set(.hz1000);
-      // currSens.signalType.set(.EMG);
-      currSens.execute(.startMEMS);
+
+      currSens?.signalDataStream.listen((data) {
+        final Iterable<List<double>> signal = data.map((e) => e.samples, );
+        callibri_readings.set_muscle_signal(signal);
+      });
+      currSens?.samplingFrequency.set(.hz1000);
+      currSens?.signalType.set(.EMG);
+      
+      currSens?.execute(.startMEMS);
+      currSens?.execute(.startSignal);
     }
   }
 
@@ -110,6 +115,7 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
                   setState(() {
                     devices = [];
                     //TODO: stop work
+                    currSens?.disconnect();
                   });
                 },
                 child: Text('Выключить'),

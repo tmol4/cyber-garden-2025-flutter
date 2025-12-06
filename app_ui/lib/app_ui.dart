@@ -328,9 +328,15 @@ class _HomeViewState extends State<HomeView> {
             type: .small,
             collapsedContainerColor: backgroundColor,
             expandedContainerColor: backgroundColor,
-            title: Text("Нейротех"),
+            title: const Text("Callibri"),
+            collapsedPadding: const .fromLTRB(
+              16.0,
+              0.0,
+              12.0 + 40.0 + 12.0,
+              0.0,
+            ),
             trailing: Padding(
-              padding: .fromLTRB(0.0, 0.0, 12.0 - 4.0, 0.0),
+              padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
               child: Flex.horizontal(
                 children: [
                   IconButton(
@@ -354,25 +360,6 @@ class _HomeViewState extends State<HomeView> {
                     ),
                     icon: const IconLegacy(Symbols.settings_rounded, fill: 1.0),
                     tooltip: "Настройки",
-                  ),
-                  IconButton(
-                    style: LegacyThemeFactory.createIconButtonStyle(
-                      colorTheme: colorTheme,
-                      elevationTheme: elevationTheme,
-                      shapeTheme: shapeTheme,
-                      stateTheme: stateTheme,
-                      typescaleTheme: typescaleTheme,
-                      width: .narrow,
-                      color: .standard,
-                    ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (context) => const AboutView(),
-                      ),
-                    ),
-                    icon: const IconLegacy(Symbols.info_rounded, fill: 1.0),
-                    tooltip: "О приложении",
                   ),
                 ],
               ),
@@ -890,6 +877,8 @@ class SettingsView extends StatefulWidget {
 }
 
 class _SettingsViewState extends State<SettingsView> {
+  final _settings = Settings.instance;
+
   @override
   Widget build(BuildContext context) {
     final colorTheme = ColorTheme.of(context);
@@ -926,6 +915,103 @@ class _SettingsViewState extends State<SettingsView> {
             ),
             title: Text("Настройки"),
             collapsedPadding: .fromLTRB(12.0 + 40.0 + 12.0, 0.0, 16.0, 0.0),
+          ),
+          SliverPadding(
+            padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
+            sliver: SliverList.list(
+              children: [
+                Padding(
+                  padding: .fromLTRB(16.0, 8.0, 16.0, 8.0),
+                  child: Text(
+                    "Внешний вид",
+                    style: typescaleTheme.labelLarge.toTextStyle(
+                      color: colorTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                ListenableBuilder(
+                  listenable: _settings.onThemeModeChanged,
+                  builder: (context, child) => DropdownMenuFormField<ThemeMode>(
+                    expandedInsets: .zero,
+                    initialSelection: _settings.themeMode,
+                    enableFilter: false,
+                    enableSearch: false,
+                    textStyle: typescaleTheme.titleMedium.toTextStyle(
+                      color: colorTheme.onSurface,
+                    ),
+                    leadingIcon: const IconLegacy(
+                      Symbols.brightness_6_rounded,
+                      fill: 1.0,
+                    ),
+                    label: const Text("Тема"),
+                    onSelected: (value) {
+                      if (value != null) _settings.themeMode = value;
+                    },
+                    inputDecorationTheme: const InputDecorationThemeData(
+                      border: UnderlineInputBorder(),
+                      filled: true,
+                    ),
+                    dropdownMenuEntries: const [
+                      DropdownMenuEntry(
+                        value: .system,
+                        leadingIcon: IconLegacy(
+                          Symbols.auto_mode_rounded,
+                          fill: 1.0,
+                        ),
+                        label: "Как в системе",
+                      ),
+                      DropdownMenuEntry(
+                        value: .light,
+                        leadingIcon: IconLegacy(
+                          Symbols.light_mode_rounded,
+                          fill: 1.0,
+                        ),
+                        label: "Светлая",
+                      ),
+                      DropdownMenuEntry(
+                        value: .dark,
+                        leadingIcon: IconLegacy(
+                          Symbols.dark_mode_rounded,
+                          fill: 1.0,
+                        ),
+                        label: "Тёмная",
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12.0),
+                Padding(
+                  padding: .fromLTRB(16.0, 8.0, 16.0, 8.0),
+                  child: Text(
+                    "Прочее",
+                    style: typescaleTheme.labelLarge.toTextStyle(
+                      color: colorTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                ListItemContainer(
+                  isFirst: true,
+                  isLast: true,
+                  child: ListItemInteraction(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (context) => const AboutView(),
+                      ),
+                    ),
+                    child: ListItemLayout(
+                      isMultiline: true,
+                      leading: const Icon(Symbols.info_rounded, fill: 1.0),
+                      headline: Text("О приложении"),
+                      supportingText: Text("Различная информация"),
+                      trailing: const Icon(
+                        Symbols.keyboard_arrow_right_rounded,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1009,7 +1095,7 @@ class _AboutViewState extends State<AboutView> {
                       context,
                       MaterialPageRoute<void>(
                         builder: (context) => const LicensePage(
-                          applicationName: "Нейротех",
+                          applicationName: "Callibri",
                           applicationLegalese:
                               "Copyright (c) 2025 The TMOL4 Team Members",
                         ),

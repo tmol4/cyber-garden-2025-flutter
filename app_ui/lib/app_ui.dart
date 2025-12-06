@@ -71,18 +71,6 @@ enum CallibriConnectionState {
   error,
 }
 
-class CallibriInfo {
-  const CallibriInfo({
-    required this.name,
-    required this.adress,
-    required this.sensorInfo,
-  });
-
-  final String name;
-  final String adress;
-  final FSensorInfo sensorInfo;
-}
-
 abstract class CallibriStreamEvent {
   const CallibriStreamEvent({required this.sensor});
 
@@ -95,60 +83,103 @@ class CallibriValueStreamEvent<T extends Object?> extends CallibriStreamEvent {
   final T value;
 }
 
-class CallibriDevice {
-  CallibriDevice._({required Scanner scanner, required FSensorInfo sensorInfo})
-    : _scanner = scanner,
-      _sensorInfo = sensorInfo;
+abstract interface class CallibriDevice {
+  String get address;
+  String get name;
+
+  CallibriConnectionState get connectionState;
+  Stream<CallibriConnectionState> get connectionStateStream;
+
+  Future<int?> get batteryPowerFuture;
+  int? get batteryPower;
+
+  Stream<List<MEMSData>> get memsDataStream;
+}
+
+class MutableCallibriDevice implements CallibriDevice {
+  MutableCallibriDevice._({
+    required Scanner scanner,
+    required FSensorInfo sensorInfo,
+  }) : _scanner = scanner,
+       _sensorInfo = sensorInfo;
 
   final Scanner _scanner;
+
   final FSensorInfo _sensorInfo;
+
   Callibri? _sensor;
 
+  @override
   String get address => _sensorInfo.address;
+
+  @override
   String get name => _sensorInfo.name;
 
+  @override
   CallibriConnectionState get connectionState =>
       _connectionStateController.value;
 
   final _connectionStateController =
       BehaviorSubject<CallibriConnectionState>.seeded(.disconnected);
-  Stream<CallibriConnectionState> get connetionStateStream =>
+
+  @override
+  Stream<CallibriConnectionState> get connectionStateStream =>
       _connectionStateController.stream;
 
-  Future<int?> get batteryPower async => await _sensor?.batteryPower.value;
+  @override
+  Future<int?> get batteryPowerFuture async =>
+      await _sensor?.batteryPower.value;
+
   StreamSubscription<int>? _batteryPowerSubscription;
-  final _batteryPowerController = StreamController<int>.broadcast();
-  Stream<int> get batteryPowerStream => _batteryPowerController.stream;
+
+  final _batteryPowerController = BehaviorSubject<int?>.seeded(null);
+
+  Stream<int?> get batteryPowerStream => _batteryPowerController.stream;
+
+  @override
+  int? get batteryPower => _batteryPowerController.value;
+
+  final _memsDataController = StreamController<List<MEMSData>>.broadcast();
+
+  @override
+  Stream<List<MEMSData>> get memsDataStream => _memsDataController.stream;
 
   @protected
   Future<Sensor?> createSensor() => _scanner.createSensor(_sensorInfo);
 
   Future<void> connect() async {
     _connectionStateController.add(.connection);
-    final sensor = await _scanner.createSensor(_sensorInfo);
-    if (sensor is Callibri) {
-      _batteryPowerSubscription = sensor.batteryPowerStream.listen((event) {
-        _batteryPowerController.add(event);
-      });
-      _connectionStateController.add(.connected);
-      _sensor = sensor;
-    } else {
+    try {
+      final sensor = await _scanner.createSensor(_sensorInfo);
+      if (sensor is Callibri) {
+        _batteryPowerSubscription = sensor.batteryPowerStream.listen((event) {
+          _batteryPowerController.add(event);
+        });
+        _connectionStateController.add(.connected);
+        _sensor = sensor;
+      } else {
+        _connectionStateController.add(.error);
+      }
+    } on Object {
       _connectionStateController.add(.error);
     }
   }
 
   Future<void> disconnect() async {
     _connectionStateController.add(.disconnection);
-
-    _batteryPowerSubscription?.cancel();
-    await _sensor?.disconnect();
-    await _sensor?.dispose();
-    _sensor = null;
-
+    try {
+      _batteryPowerSubscription?.cancel();
+      _batteryPowerController.add(null);
+      await _sensor?.disconnect();
+      await _sensor?.dispose();
+      _sensor = null;
+    } on Object {
+      return;
+    }
     _connectionStateController.add(.disconnected);
   }
 
-  void dispose() async {
+  Future<void> dispose() async {
     _batteryPowerController.close();
     _connectionStateController.close();
   }
@@ -159,10 +190,11 @@ class CallibriController {
 
   Scanner? _scanner;
 
-  final _devicesController = BehaviorSubject<Map<String, CallibriDevice>>();
-  Stream<Map<String, CallibriDevice>> get devicesStream =>
+  final _devicesController =
+      BehaviorSubject<List<MutableCallibriDevice>?>.seeded(null);
+  Stream<List<MutableCallibriDevice>?> get devicesStream =>
       _devicesController.stream;
-  Map<String, CallibriDevice>? get devices => _devicesController.valueOrNull;
+  List<MutableCallibriDevice>? get devices => _devicesController.value;
 
   final _isScanningController = BehaviorSubject<bool>.seeded(false);
   Stream<bool> get isScanningStream => _isScanningController.stream;
@@ -186,7 +218,9 @@ class CallibriController {
     scanner.sensorsStream.listen((event) {
       _sensorsController.add(event);
 
-      final oldDevices = devices ?? const {};
+      final oldDevices = Map<String, MutableCallibriDevice>.fromEntries(
+        devices?.map((device) => MapEntry(device.address, device)) ?? const [],
+      );
       final newSensorInfos = Map.fromEntries(
         event.map((sensorInfo) => MapEntry(sensorInfo.address, sensorInfo)),
       );
@@ -196,27 +230,28 @@ class CallibriController {
         ...newSensorInfos.keys,
       };
 
-      final newDevices = Map.fromEntries(
-        addressesUnion.map<MapEntry<String, CallibriDevice>?>((address) {
-          final oldDevice = oldDevices[address];
-          final newSensorInfo = newSensorInfos[address];
-          if (oldDevice != null && newSensorInfo != null) {
-            return MapEntry(address, oldDevice);
-          }
-          if (oldDevice != null) {
-            oldDevice.disconnect().then((_) => oldDevice.dispose());
+      final newDevices = addressesUnion
+          .map<MutableCallibriDevice?>((address) {
+            final oldDevice = oldDevices[address];
+            final newSensorInfo = newSensorInfos[address];
+            if (oldDevice != null && newSensorInfo != null) {
+              return oldDevice;
+            }
+            if (oldDevice != null) {
+              oldDevice.disconnect().then((_) => oldDevice.dispose());
+              return null;
+            }
+            if (newSensorInfo != null) {
+              final newDevice = MutableCallibriDevice._(
+                scanner: scanner,
+                sensorInfo: newSensorInfo,
+              );
+              return newDevice;
+            }
             return null;
-          }
-          if (newSensorInfo != null) {
-            final newDevice = CallibriDevice._(
-              scanner: scanner,
-              sensorInfo: newSensorInfo,
-            );
-            return MapEntry(address, newDevice);
-          }
-          return null;
-        }).nonNulls,
-      );
+          })
+          .nonNulls
+          .toList(growable: false);
       _devicesController.add(newDevices);
     });
 
@@ -239,7 +274,7 @@ class CallibriController {
     _isScanningController.add(false);
   }
 
-  Future<CallibriDevice?> connectTo(FSensorInfo sensorInfo) async {
+  Future<MutableCallibriDevice?> connectTo(FSensorInfo sensorInfo) async {
     final scanner = await _ensureScanner();
     final sensor = await scanner.createSensor(sensorInfo);
     if (sensor is Callibri) {
@@ -258,6 +293,16 @@ class CallibriController {
     _sensorsController.close();
 
     await _scanner?.stop();
+
+    if (devices case final devices?) {
+      for (final device in devices) {
+        await device.disconnect();
+        await device.dispose();
+      }
+      _devicesController.add(null);
+    }
+    _devicesController.close();
+
     _scanner?.dispose();
   }
 }
@@ -345,8 +390,50 @@ class MockScanner implements Scanner {
   }
 }
 
+class SingleDeviceController {
+  SingleDeviceController();
+
+  final _controller = CallibriController();
+  MutableCallibriDevice? _device;
+
+  List<CallibriDevice>? get devices => _controller.devices;
+  Stream<List<CallibriDevice>?> get devicesStream => _controller.devicesStream;
+
+  Future<void> start() async {
+    await _controller.start();
+  }
+
+  Future<void> stop() async {
+    await _controller.stop();
+  }
+
+  Future<void> connectTo(CallibriDevice device) async {
+    final devices = _controller.devices;
+    if (devices == null || devices.isEmpty) return;
+    if (!devices.contains(device)) return;
+    assert(device is MutableCallibriDevice);
+    device as MutableCallibriDevice;
+    await device.connect();
+  }
+
+  Future<void> disconnectFrom(CallibriDevice device) async {
+    final devices = _controller.devices;
+    if (devices == null || devices.isEmpty) return;
+    if (!devices.contains(device)) return;
+    assert(device is MutableCallibriDevice);
+    device as MutableCallibriDevice;
+    await device.disconnect();
+  }
+
+  void dispose() {
+    _controller.dispose();
+  }
+}
+
 class HomeView extends StatefulWidget {
-  const HomeView({super.key});
+  const HomeView({super.key, required this.controller});
+
+  final SingleDeviceController controller;
 
   @override
   State<HomeView> createState() => _HomeViewState();
@@ -354,20 +441,6 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   final _settings = Settings.instance;
-
-  void _test() async {
-    await Future.delayed(Duration(seconds: 5));
-    final code = 0x4a;
-    // final aa = MapVirtualKey(code, 0);
-    // simulateKeyBase(key: aa, direction: Direction.click.index);
-    simulateKeyCombinationBase(
-      keys: [
-        MapVirtualKey(UniversalKey.leftAlt.code, 0),
-        MapVirtualKey(UniversalKey.tab.code, 0),
-      ],
-      durationMs: BigInt.from(1000),
-    );
-  }
 
   @override
   void initState() {
@@ -476,7 +549,8 @@ class _HomeViewState extends State<HomeView> {
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute<Object?>(
-                        builder: (context) => DevicesView(),
+                        builder: (context) =>
+                            DevicesView(controller: widget.controller),
                       ),
                     ),
                     child: Flex.horizontal(
@@ -499,7 +573,8 @@ class _HomeViewState extends State<HomeView> {
 }
 
 class DevicesView extends StatefulWidget {
-  const DevicesView({super.key});
+  const DevicesView({super.key, required this.controller});
+  final SingleDeviceController controller;
 
   @override
   State<DevicesView> createState() => _DevicesViewState();
@@ -543,7 +618,7 @@ class _DevicesViewState extends State<DevicesView> {
   Widget _buildDevicesStream({
     required Widget Function(
       BuildContext context,
-      Map<String, CallibriDevice>? devices,
+      List<MutableCallibriDevice>? devices,
     )
     builder,
   }) => StreamBuilder(
@@ -551,6 +626,30 @@ class _DevicesViewState extends State<DevicesView> {
     initialData: _controller.devices,
     builder: (context, snapshot) =>
         builder(context, snapshot.data ?? _controller.devices),
+  );
+
+  Widget _buildConnetionStateStream({
+    required MutableCallibriDevice device,
+    required Widget Function(
+      BuildContext context,
+      CallibriConnectionState connectionState,
+    )
+    builder,
+  }) => StreamBuilder(
+    stream: device.connectionStateStream,
+    initialData: device.connectionState,
+    builder: (context, snapshot) =>
+        builder(context, snapshot.data ?? device.connectionState),
+  );
+
+  Widget _buildBatteryPowerStream({
+    required MutableCallibriDevice device,
+    required Widget Function(BuildContext context, int? batteryPower) builder,
+  }) => StreamBuilder(
+    stream: device.batteryPowerStream,
+    initialData: device.batteryPower,
+    builder: (context, snapshot) =>
+        builder(context, snapshot.data ?? device.batteryPower),
   );
 
   @override
@@ -606,7 +705,7 @@ class _DevicesViewState extends State<DevicesView> {
                     tooltip: "Назад",
                   ),
                 ),
-                title: Text("Подключение"),
+                title: const Text("Подключение"),
                 trailing: Padding(
                   padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
                   child: IconButton(
@@ -637,64 +736,97 @@ class _DevicesViewState extends State<DevicesView> {
             builder: (context, isScanning) => _buildDevicesStream(
               builder: (context, devices) {
                 if (devices != null && devices.isNotEmpty) {
-                  final devicesList = devices.values.toList(growable: false);
                   return SliverPadding(
                     padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
                     sliver: SliverList.separated(
-                      itemCount: devicesList.length,
+                      itemCount: devices.length,
                       separatorBuilder: (context, index) =>
                           const SizedBox(height: 2.0),
                       itemBuilder: (context, index) {
-                        final device = devicesList[index];
-                        return ListItemContainer(
-                          isFirst: index == 0,
-                          isLast: index == devices.length - 1,
-                          child: ListItemInteraction(
-                            onTap: () async {
-                              await device.connect();
-                              print(await device.batteryPower);
-                              await device.disconnect();
-                            },
-                            child: ListItemLayout(
-                              isMultiline: true,
-                              leading: SizedBox.square(
-                                dimension: 40.0,
-                                child: Material(
-                                  color: colorTheme.surfaceContainer,
-                                  shape: CornersBorder.rounded(
-                                    corners: .all(shapeTheme.corner.full),
-                                  ),
-                                  child: Stack(
-                                    alignment: .center,
-                                    children: [
-                                      // SizedBox.square(
-                                      //   dimension: 40.0,
-                                      //   child: CircularProgressIndicator(
-                                      //     value: null,
-                                      //     padding: .zero,
-                                      //     strokeWidth: 2.0,
-                                      //     backgroundColor: Colors.transparent,
-                                      //   ),
-                                      // ),
-                                      Icon(
-                                        Symbols.add_rounded,
-                                        fill: 1.0,
+                        final device = devices[index];
+                        return KeyedSubtree(
+                          key: ValueKey(device.address),
+                          child: _buildConnetionStateStream(
+                            device: device,
+                            builder: (context, connectionState) => _buildBatteryPowerStream(
+                              device: device,
+                              builder: (context, batteryPower) => ListItemContainer(
+                                isFirst: index == 0,
+                                isLast: index == devices.length - 1,
+                                containerShape:
+                                    connectionState == .connected ||
+                                        connectionState == .connection
+                                    ? CornersBorder.rounded(
+                                        corners: .all(
+                                          shapeTheme.corner.largeIncreased,
+                                        ),
+                                      )
+                                    : null,
+                                containerColor:
+                                    connectionState == .connected ||
+                                        connectionState == .connection
+                                    ? colorTheme.secondaryContainer
+                                    : null,
+                                child: ListItemInteraction(
+                                  onTap: () async {
+                                    _stop();
+                                    switch (connectionState) {
+                                      case .disconnected:
+                                        await device.connect();
+                                      case .connected:
+                                        await device.disconnect();
+                                      default:
+                                    }
+                                  },
+                                  child: ListItemLayout(
+                                    isMultiline: true,
+                                    leading: SizedBox.square(
+                                      dimension: 40.0,
+                                      child: Material(
+                                        color: colorTheme.surfaceContainer,
+                                        shape: CornersBorder.rounded(
+                                          corners: .all(shapeTheme.corner.full),
+                                        ),
+                                        child: Stack(
+                                          alignment: .center,
+                                          children: [
+                                            // SizedBox.square(
+                                            //   dimension: 40.0,
+                                            //   child: CircularProgressIndicator(
+                                            //     value: null,
+                                            //     padding: .zero,
+                                            //     strokeWidth: 2.0,
+                                            //     backgroundColor: Colors.transparent,
+                                            //   ),
+                                            // ),
+                                            Icon(
+                                              Symbols
+                                                  .nest_hello_doorbell_rounded,
+                                              fill: 1.0,
+                                              color: colorTheme.primary,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    headline: Text(
+                                      "${device.name} (${device.address})",
+                                      maxLines: 1,
+                                      overflow: .ellipsis,
+                                      style: TextStyle(
                                         color: colorTheme.primary,
                                       ),
-                                    ],
+                                    ),
+                                    supportingText: Text(
+                                      connectionState == .connected
+                                          ? "$batteryPower%"
+                                          : "Нажмите, чтобы подключить",
+                                      style: typescaleTheme.bodySmall
+                                          .toTextStyle(
+                                            color: colorTheme.onSurface,
+                                          ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              headline: Text(
-                                "${device.name} (${device.address})",
-                                maxLines: 1,
-                                overflow: .ellipsis,
-                                style: TextStyle(color: colorTheme.primary),
-                              ),
-                              supportingText: Text(
-                                "Нажмите, чтобы подключить",
-                                style: typescaleTheme.bodySmall.toTextStyle(
-                                  color: colorTheme.onSurface,
                                 ),
                               ),
                             ),
@@ -971,8 +1103,63 @@ class SettingsView extends StatefulWidget {
   State<SettingsView> createState() => _SettingsViewState();
 }
 
+extension FSensorSamplingFrequencyExtension on FSensorSamplingFrequency {
+  int? get value => switch (this) {
+    .hz10 => 10,
+    .hz20 => 20,
+    .hz100 => 100,
+    .hz125 => 125,
+    .hz250 => 250,
+    .hz500 => 500,
+    .hz1000 => 1000,
+    .hz2000 => 2000,
+    .hz4000 => 4000,
+    .hz8000 => 8000,
+    .hz10000 => 10000,
+    .hz12000 => 12000,
+    .hz16000 => 16000,
+    .hz24000 => 24000,
+    .hz32000 => 32000,
+    .hz48000 => 48000,
+    .hz64000 => 64000,
+    _ => null,
+  };
+
+  static FSensorSamplingFrequency? tryParse(int? value) => switch (value) {
+    10 => .hz10,
+    20 => .hz20,
+    100 => .hz100,
+    125 => .hz125,
+    250 => .hz250,
+    500 => .hz500,
+    1000 => .hz1000,
+    2000 => .hz2000,
+    4000 => .hz4000,
+    8000 => .hz8000,
+    10000 => .hz10000,
+    12000 => .hz12000,
+    16000 => .hz16000,
+    24000 => .hz24000,
+    32000 => .hz32000,
+    48000 => .hz48000,
+    64000 => .hz64000,
+    _ => null,
+  };
+}
+
 class _SettingsViewState extends State<SettingsView> {
   final _settings = Settings.instance;
+
+  static const _samplingFrequencies = <FSensorSamplingFrequency>[
+    .hz100,
+    .hz250,
+    .hz500,
+    .hz1000,
+    .hz2000,
+    .hz4000,
+    .hz8000,
+    .hz10000,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -1012,9 +1199,135 @@ class _SettingsViewState extends State<SettingsView> {
             collapsedPadding: .fromLTRB(12.0 + 40.0 + 12.0, 0.0, 16.0, 0.0),
           ),
           SliverPadding(
-            padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
+            padding: const .fromLTRB(16.0, 0.0, 16.0, 16.0),
             sliver: SliverList.list(
               children: [
+                Padding(
+                  padding: .fromLTRB(16.0, 8.0, 16.0, 8.0),
+                  child: Text(
+                    "Поведение",
+                    style: typescaleTheme.labelLarge.toTextStyle(
+                      color: colorTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                ListenableBuilder(
+                  listenable: _settings.onSamplingFrequencyChanged,
+                  builder: (context, child) => ListItemContainer(
+                    isFirst: true,
+                    child: Flex.vertical(
+                      crossAxisAlignment: .stretch,
+                      children: [
+                        ListItemInteraction(
+                          onTap: _settings.samplingFrequency != .hz250
+                              ? () {
+                                  _settings.samplingFrequency = .hz250;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        "Значение параметра сброшено",
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          child: ListItemLayout(
+                            isMultiline: true,
+                            leading: const Icon(Symbols.vital_signs_rounded),
+                            headline: Text("Частота ЭМГ"),
+                            supportingText: Text(
+                              "Частота считывания мышечной активности",
+                            ),
+                            trailing: _settings.samplingFrequency.value != null
+                                ? Text(
+                                    "${_settings.samplingFrequency.value} Гц",
+                                  )
+                                : null,
+                          ),
+                        ),
+                        Padding(
+                          padding: const .fromLTRB(
+                            16.0,
+                            8.0 - 2.0,
+                            16.0,
+                            16.0 - 2.0,
+                          ),
+                          child: Slider(
+                            min: 0.0,
+                            max: (_samplingFrequencies.length - 1).toDouble(),
+                            value: _samplingFrequencies
+                                .indexOf(_settings.samplingFrequency)
+                                .toDouble(),
+                            divisions: _samplingFrequencies.length - 1,
+                            onChanged: (value) {
+                              final index = value.round();
+                              final newValue = _samplingFrequencies
+                                  .elementAtOrNull(index);
+                              if (newValue != null) {
+                                _settings.samplingFrequency = newValue;
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2.0),
+                ListenableBuilder(
+                  listenable: _settings.onGyroscopeSensitivityChanged,
+                  builder: (context, child) => ListItemContainer(
+                    isLast: true,
+                    child: Flex.vertical(
+                      crossAxisAlignment: .stretch,
+                      children: [
+                        ListItemInteraction(
+                          onTap: _settings.gyroscopeSensitivity != 0.5
+                              ? () {
+                                  _settings.gyroscopeSensitivity = 0.5;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        "Значение параметра сброшено",
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          child: ListItemLayout(
+                            isMultiline: true,
+                            leading: const Icon(
+                              Symbols.threed_rotation_rounded,
+                            ),
+                            headline: Text("Чувствительность гироскопа"),
+                            supportingText: Text(
+                              "Размах вращательных движений",
+                            ),
+                            trailing: Text(
+                              "${(_settings.gyroscopeSensitivity * 100).round()}%",
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const .fromLTRB(
+                            16.0,
+                            8.0 - 2.0,
+                            16.0,
+                            16.0 - 2.0,
+                          ),
+                          child: Slider(
+                            min: 0.0,
+                            max: 1.0,
+                            value: _settings.gyroscopeSensitivity,
+                            onChanged: (value) {
+                              _settings.gyroscopeSensitivity = value;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 Padding(
                   padding: .fromLTRB(16.0, 8.0, 16.0, 8.0),
                   child: Text(
@@ -1440,6 +1753,8 @@ class Settings with ChangeNotifier {
 
   final SharedPreferencesAsync _prefs;
 
+  final _themeModeNotifier = _Notifier();
+  Listenable get onThemeModeChanged => _themeModeNotifier;
   ThemeMode _themeMode = .system;
   ThemeMode get themeMode => _themeMode;
   set themeMode(ThemeMode value) {
@@ -1450,9 +1765,8 @@ class Settings with ChangeNotifier {
     saveOnly(themeMode: true);
   }
 
-  final _themeModeNotifier = _Notifier();
-  Listenable get onThemeModeChanged => _themeModeNotifier;
-
+  final _alwaysOnTopNotifier = _Notifier();
+  Listenable get onAlwaysOnTopChanged => _alwaysOnTopNotifier;
   bool _alwaysOnTop = false;
   bool get alwaysOnTop => _alwaysOnTop;
   set alwaysOnTop(bool value) {
@@ -1463,18 +1777,42 @@ class Settings with ChangeNotifier {
     saveOnly(alwaysOnTop: true);
   }
 
-  final _alwaysOnTopNotifier = _Notifier();
-  Listenable get onAlwaysOnTopChanged => _alwaysOnTopNotifier;
+  final _samplingFrequencyNotifier = _Notifier();
+  Listenable get onSamplingFrequencyChanged => _samplingFrequencyNotifier;
+  FSensorSamplingFrequency _samplingFrequency = .hz250;
+  FSensorSamplingFrequency get samplingFrequency => _samplingFrequency;
+  set samplingFrequency(FSensorSamplingFrequency value) {
+    if (_samplingFrequency == value || value.value == null) return;
+    _samplingFrequency = value;
+    _samplingFrequencyNotifier.notify();
+    notifyListeners();
+    saveOnly(samplingFrequency: true);
+  }
+
+  final _gyroscopeSensitivityNotifier = _Notifier();
+  Listenable get onGyroscopeSensitivityChanged => _gyroscopeSensitivityNotifier;
+  double _gyroscopeSensitivity = 0.5;
+  double get gyroscopeSensitivity => _gyroscopeSensitivity;
+  set gyroscopeSensitivity(double value) {
+    if (_gyroscopeSensitivity == value) return;
+    _gyroscopeSensitivity = value;
+    _gyroscopeSensitivityNotifier.notify();
+    notifyListeners();
+    saveOnly(gyroscopeSensitivity: true);
+  }
 
   void _notifyAllListeners() {
     _themeModeNotifier.notify();
+    _alwaysOnTopNotifier.notify();
+    _samplingFrequencyNotifier.notify();
     notifyListeners();
   }
 
   Future<void> loadOnly({
     bool themeMode = false,
     bool alwaysOnTop = false,
-    bool minimizeToTray = false,
+    bool samplingFrequency = false,
+    bool gyroscopeSensitivity = false,
   }) async {
     final futures = <Future<bool>>[];
     if (themeMode) {
@@ -1505,6 +1843,31 @@ class Settings with ChangeNotifier {
       });
       futures.add(future);
     }
+    if (samplingFrequency) {
+      final future = _prefs.getInt("samplingFrequency").then((data) {
+        final value =
+            FSensorSamplingFrequencyExtension.tryParse(data) ?? .hz250;
+        if (_samplingFrequency != value) {
+          _samplingFrequency = value;
+          return true;
+        } else {
+          return false;
+        }
+      });
+      futures.add(future);
+    }
+    if (gyroscopeSensitivity) {
+      final future = _prefs.getDouble("gyroscopeSensitivity").then((data) {
+        final value = data ?? 0.5;
+        if (_gyroscopeSensitivity != value) {
+          _gyroscopeSensitivity = value;
+          return true;
+        } else {
+          return false;
+        }
+      });
+      futures.add(future);
+    }
     if (futures.isNotEmpty) {
       final result = await Future.wait(futures);
       if (result.contains(true)) {
@@ -1513,12 +1876,14 @@ class Settings with ChangeNotifier {
     }
   }
 
-  Future<void> loadAll() => loadOnly(themeMode: true, alwaysOnTop: true);
+  Future<void> loadAll() =>
+      loadOnly(themeMode: true, alwaysOnTop: true, samplingFrequency: true);
 
   Future<void> saveOnly({
     bool themeMode = false,
     bool alwaysOnTop = false,
-    bool minimizeToTray = false,
+    bool samplingFrequency = false,
+    bool gyroscopeSensitivity = false,
   }) async {
     final futures = <Future<void>>[];
     if (themeMode) {
@@ -1531,12 +1896,25 @@ class Settings with ChangeNotifier {
       final future = _prefs.setBool("alwaysOnTop", data);
       futures.add(future);
     }
+    if (samplingFrequency) {
+      final data = _samplingFrequency.value;
+      if (data != null) {
+        final future = _prefs.setInt("samplingFrequency", data);
+        futures.add(future);
+      }
+    }
+    if (gyroscopeSensitivity) {
+      final data = _gyroscopeSensitivity;
+      final future = _prefs.setDouble("gyroscopeSensitivity", data);
+      futures.add(future);
+    }
     if (futures.isNotEmpty) {
       await Future.wait(futures);
     }
   }
 
-  Future<void> saveAll() => saveOnly(themeMode: true, alwaysOnTop: true);
+  Future<void> saveAll() =>
+      saveOnly(themeMode: true, alwaysOnTop: true, samplingFrequency: true);
 
   static Settings? _instance;
 

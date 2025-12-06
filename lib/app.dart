@@ -15,6 +15,7 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> with WindowListener, TrayListener {
   final _settings = Settings.instance;
+  late SingleDeviceController _controller;
 
   ColorThemeData _createColorTheme({
     required Brightness brightness,
@@ -99,7 +100,9 @@ class _AppState extends State<App> with WindowListener, TrayListener {
         typescaleTheme: typescaleTheme,
       ),
       builder: _buildHomeWrapper,
-      home: kDebugUi ? const app_ui_debug.mainPage() : const HomeView(),
+      home: kDebugUi
+          ? const app_ui_debug.mainPage()
+          : HomeView(controller: _controller),
     );
   }
 
@@ -157,10 +160,12 @@ class _AppState extends State<App> with WindowListener, TrayListener {
     trayManager.addListener(this);
     _settings.onThemeModeChanged.addListener(_themeModeListener);
     _settings.onAlwaysOnTopChanged.addListener(_alwaysOnTopListener);
+    _controller = SingleDeviceController();
   }
 
   @override
   void dispose() {
+    _controller.dispose();
     _settings.onAlwaysOnTopChanged.removeListener(_alwaysOnTopListener);
     _settings.onThemeModeChanged.removeListener(_themeModeListener);
     trayManager.removeListener(this);

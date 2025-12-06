@@ -10,8 +10,9 @@ void main(List<String> arguments) async {
   // Initialize binding singletons
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Settings.instance.loadAll();
-  await Settings.instance.saveAll();
+  final settings = Settings.instance
+    ..loadAll()
+    ..saveAll();
 
   //
   await BixatKeyMouse.initialize();
@@ -19,11 +20,11 @@ void main(List<String> arguments) async {
   // Window
   await windowManager.ensureInitialized();
 
-  final windowOptions = const WindowOptions(
+  final windowOptions = WindowOptions(
     title: "Cyber Garden 2025",
-    minimumSize: Size(360.0, 640.0),
-    size: Size(412.0, 664.0),
-    // titleBarStyle: TitleBarStyle.hidden,
+    minimumSize: const Size(360.0, 640.0),
+    size: const Size(412.0, 664.0),
+    alwaysOnTop: settings.alwaysOnTop,
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await Future.value([

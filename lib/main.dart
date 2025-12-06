@@ -24,7 +24,7 @@ void main(List<String> arguments) async {
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await Future.value([
-      // windowManager.setPreventClose(true),
+      if (!kDebugMode) windowManager.setPreventClose(true),
       windowManager.setMaximizable(false),
       windowManager.setResizable(true),
     ]);
@@ -35,12 +35,12 @@ void main(List<String> arguments) async {
   // Tray
   final menu = Menu(
     items: [
-      MenuItem.checkbox(
-        key: "show_window",
-        checked: true,
-        label: "Показывать окно",
-      ),
-      MenuItem.separator(),
+      // MenuItem.checkbox(
+      //   key: "show_window",
+      //   checked: true,
+      //   label: "Показывать окно",
+      // ),
+      // MenuItem.separator(),
       MenuItem(key: "exit", label: "Выйти"),
     ],
   );

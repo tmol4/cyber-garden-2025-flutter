@@ -98,7 +98,9 @@ class _AppState extends State<App> with WindowListener, TrayListener {
 
   @override
   void onWindowClose() async {
-    // await windowManager.hide();
+    if (!kDebugMode) {
+      await windowManager.hide();
+    }
   }
 
   @override

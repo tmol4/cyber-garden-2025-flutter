@@ -6,10 +6,12 @@ export 'src/legacy.dart';
 export 'src/utils.dart';
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:app_ui/src/flutter.dart';
+import 'package:bixat_key_mouse/bixat_key_mouse.dart';
 import 'package:collection/collection.dart';
 import 'package:neurosdk2/neurosdk2.dart';
 import 'package:rxdart/rxdart.dart';
@@ -17,6 +19,45 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+
+import 'package:bixat_key_mouse/src/key_code_manager.dart';
+import 'package:bixat_key_mouse/src/rust/api/bixat_key_mouse.dart'
+    show simulateKeyBase, simulateKeyCombinationBase;
+import 'package:win32/win32.dart' show MapVirtualKey, MapVirtualKeyEx;
+
+abstract final class InputSimulator {
+  static void simulateKey(UniversalKey key, {Direction direction = .click}) {
+    final int code;
+    if (Platform.isWindows) {
+      code = MapVirtualKey(key.code, 0);
+      if (code == 0) return;
+    } else {
+      code = key.code;
+    }
+    simulateKeyBase(key: code, direction: direction.index);
+  }
+
+  static void simulateKeyCombination(
+    List<UniversalKey> keys,
+    Duration duration,
+  ) {
+    final List<int> codes;
+    if (Platform.isWindows) {
+      codes = keys
+          .map((key) => MapVirtualKey(key.code, 0))
+          .toList(growable: false);
+      if (codes.any((value) => value <= 0)) {
+        return;
+      }
+    } else {
+      codes = keys.map((key) => key.code).toList(growable: false);
+    }
+    simulateKeyCombinationBase(
+      keys: codes,
+      durationMs: BigInt.from(duration.inMilliseconds),
+    );
+  }
+}
 
 const _scannerSensorFilters = <FSensorFamily>[.leCallibri, .leKolibri];
 
@@ -312,6 +353,28 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> {
+  final _settings = Settings.instance;
+
+  void _test() async {
+    await Future.delayed(Duration(seconds: 5));
+    final code = 0x4a;
+    // final aa = MapVirtualKey(code, 0);
+    // simulateKeyBase(key: aa, direction: Direction.click.index);
+    simulateKeyCombinationBase(
+      keys: [
+        MapVirtualKey(UniversalKey.leftAlt.code, 0),
+        MapVirtualKey(UniversalKey.tab.code, 0),
+      ],
+      durationMs: BigInt.from(1000),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // _test();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorTheme = ColorTheme.of(context);
@@ -339,6 +402,32 @@ class _HomeViewState extends State<HomeView> {
               padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
               child: Flex.horizontal(
                 children: [
+                  ListenableBuilder(
+                    listenable: _settings.onAlwaysOnTopChanged,
+                    builder: (context, child) => IconButton(
+                      style: LegacyThemeFactory.createIconButtonStyle(
+                        colorTheme: colorTheme,
+                        elevationTheme: elevationTheme,
+                        shapeTheme: shapeTheme,
+                        stateTheme: stateTheme,
+                        typescaleTheme: typescaleTheme,
+                        color: .standard,
+                        unselectedContainerColor:
+                            colorTheme.surfaceContainerHighest,
+                        selectedContainerColor:
+                            colorTheme.surfaceContainerHighest,
+                        isSelected: _settings.alwaysOnTop,
+                      ),
+                      onPressed: () =>
+                          _settings.alwaysOnTop = !_settings.alwaysOnTop,
+                      icon: IconLegacy(
+                        Symbols.keep_rounded,
+                        fill: _settings.alwaysOnTop ? 1.0 : 0.0,
+                      ),
+                      tooltip: "Настройки",
+                    ),
+                  ),
+                  const SizedBox(width: 8.0 - 4.0),
                   IconButton(
                     style: LegacyThemeFactory.createIconButtonStyle(
                       colorTheme: colorTheme,
@@ -467,7 +556,7 @@ class _DevicesViewState extends State<DevicesView> {
   @override
   void initState() {
     super.initState();
-    _controller = MockCallibriController();
+    _controller = CallibriController();
     _startTimer();
   }
 
@@ -556,12 +645,16 @@ class _DevicesViewState extends State<DevicesView> {
                       separatorBuilder: (context, index) =>
                           const SizedBox(height: 2.0),
                       itemBuilder: (context, index) {
-                        final sensorInfo = devicesList[index];
+                        final device = devicesList[index];
                         return ListItemContainer(
                           isFirst: index == 0,
                           isLast: index == devices.length - 1,
                           child: ListItemInteraction(
-                            onTap: () {},
+                            onTap: () async {
+                              await device.connect();
+                              print(await device.batteryPower);
+                              await device.disconnect();
+                            },
                             child: ListItemLayout(
                               isMultiline: true,
                               leading: SizedBox.square(
@@ -593,7 +686,9 @@ class _DevicesViewState extends State<DevicesView> {
                                 ),
                               ),
                               headline: Text(
-                                sensorInfo.name,
+                                "${device.name} (${device.address})",
+                                maxLines: 1,
+                                overflow: .ellipsis,
                                 style: TextStyle(color: colorTheme.primary),
                               ),
                               supportingText: Text(
@@ -1358,12 +1453,29 @@ class Settings with ChangeNotifier {
   final _themeModeNotifier = _Notifier();
   Listenable get onThemeModeChanged => _themeModeNotifier;
 
+  bool _alwaysOnTop = false;
+  bool get alwaysOnTop => _alwaysOnTop;
+  set alwaysOnTop(bool value) {
+    if (_alwaysOnTop == value) return;
+    _alwaysOnTop = value;
+    _alwaysOnTopNotifier.notify();
+    notifyListeners();
+    saveOnly(alwaysOnTop: true);
+  }
+
+  final _alwaysOnTopNotifier = _Notifier();
+  Listenable get onAlwaysOnTopChanged => _alwaysOnTopNotifier;
+
   void _notifyAllListeners() {
     _themeModeNotifier.notify();
     notifyListeners();
   }
 
-  Future<void> loadOnly({bool themeMode = false}) async {
+  Future<void> loadOnly({
+    bool themeMode = false,
+    bool alwaysOnTop = false,
+    bool minimizeToTray = false,
+  }) async {
     final futures = <Future<bool>>[];
     if (themeMode) {
       final future = _prefs.getString("themeMode").then((data) {
@@ -1381,6 +1493,18 @@ class Settings with ChangeNotifier {
       });
       futures.add(future);
     }
+    if (alwaysOnTop) {
+      final future = _prefs.getBool("alwaysOnTop").then((data) {
+        final value = data ?? false;
+        if (_alwaysOnTop != value) {
+          _alwaysOnTop = value;
+          return true;
+        } else {
+          return false;
+        }
+      });
+      futures.add(future);
+    }
     if (futures.isNotEmpty) {
       final result = await Future.wait(futures);
       if (result.contains(true)) {
@@ -1389,13 +1513,22 @@ class Settings with ChangeNotifier {
     }
   }
 
-  Future<void> loadAll() => loadOnly(themeMode: true);
+  Future<void> loadAll() => loadOnly(themeMode: true, alwaysOnTop: true);
 
-  Future<void> saveOnly({bool themeMode = false}) async {
+  Future<void> saveOnly({
+    bool themeMode = false,
+    bool alwaysOnTop = false,
+    bool minimizeToTray = false,
+  }) async {
     final futures = <Future<void>>[];
     if (themeMode) {
-      final value = _themeMode.name;
-      final future = _prefs.setString("themeMode", value);
+      final data = _themeMode.name;
+      final future = _prefs.setString("themeMode", data);
+      futures.add(future);
+    }
+    if (alwaysOnTop) {
+      final data = _alwaysOnTop;
+      final future = _prefs.setBool("alwaysOnTop", data);
       futures.add(future);
     }
     if (futures.isNotEmpty) {
@@ -1403,7 +1536,7 @@ class Settings with ChangeNotifier {
     }
   }
 
-  Future<void> saveAll() => saveOnly(themeMode: true);
+  Future<void> saveAll() => saveOnly(themeMode: true, alwaysOnTop: true);
 
   static Settings? _instance;
 

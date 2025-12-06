@@ -7,48 +7,187 @@ export 'src/utils.dart';
 
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:app_ui/src/flutter.dart';
+import 'package:collection/collection.dart';
 import 'package:neurosdk2/neurosdk2.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 
 const _scannerSensorFilters = <FSensorFamily>[.leCallibri, .leKolibri];
+
+enum CallibriDataState { signal, envelope, mems }
+
+enum CallibriConnectionState {
+  connection,
+  connected,
+  disconnection,
+  disconnected,
+  error,
+}
+
+class CallibriInfo {
+  const CallibriInfo({
+    required this.name,
+    required this.adress,
+    required this.sensorInfo,
+  });
+
+  final String name;
+  final String adress;
+  final FSensorInfo sensorInfo;
+}
+
+abstract class CallibriStreamEvent {
+  const CallibriStreamEvent({required this.sensor});
+
+  final Callibri sensor;
+}
+
+class CallibriValueStreamEvent<T extends Object?> extends CallibriStreamEvent {
+  const CallibriValueStreamEvent({required super.sensor, required this.value});
+
+  final T value;
+}
+
+class CallibriDevice {
+  CallibriDevice._({required Scanner scanner, required FSensorInfo sensorInfo})
+    : _scanner = scanner,
+      _sensorInfo = sensorInfo;
+
+  final Scanner _scanner;
+  final FSensorInfo _sensorInfo;
+  Callibri? _sensor;
+
+  String get address => _sensorInfo.address;
+  String get name => _sensorInfo.name;
+
+  CallibriConnectionState get connectionState =>
+      _connectionStateController.value;
+
+  final _connectionStateController =
+      BehaviorSubject<CallibriConnectionState>.seeded(.disconnected);
+  Stream<CallibriConnectionState> get connetionStateStream =>
+      _connectionStateController.stream;
+
+  Future<int?> get batteryPower async => await _sensor?.batteryPower.value;
+  StreamSubscription<int>? _batteryPowerSubscription;
+  final _batteryPowerController = StreamController<int>.broadcast();
+  Stream<int> get batteryPowerStream => _batteryPowerController.stream;
+
+  @protected
+  Future<Sensor?> createSensor() => _scanner.createSensor(_sensorInfo);
+
+  Future<void> connect() async {
+    _connectionStateController.add(.connection);
+    final sensor = await _scanner.createSensor(_sensorInfo);
+    if (sensor is Callibri) {
+      _batteryPowerSubscription = sensor.batteryPowerStream.listen((event) {
+        _batteryPowerController.add(event);
+      });
+      _connectionStateController.add(.connected);
+      _sensor = sensor;
+    } else {
+      _connectionStateController.add(.error);
+    }
+  }
+
+  Future<void> disconnect() async {
+    _connectionStateController.add(.disconnection);
+
+    _batteryPowerSubscription?.cancel();
+    await _sensor?.disconnect();
+    await _sensor?.dispose();
+    _sensor = null;
+
+    _connectionStateController.add(.disconnected);
+  }
+
+  void dispose() async {
+    _batteryPowerController.close();
+    _connectionStateController.close();
+  }
+}
 
 class CallibriController {
   CallibriController();
 
   Scanner? _scanner;
 
+  Map<String, CallibriDevice> get devices => _devicesController.value;
+  final _devicesController =
+      BehaviorSubject<Map<String, CallibriDevice>>.seeded(const {});
+  Stream<Map<String, CallibriDevice>> get devicesStream =>
+      _devicesController.stream;
+
   bool _isScanning = false;
   bool get isScanning => _isScanning;
-
-  final StreamController<bool> _isScanningController = BehaviorSubject.seeded(
-    false,
-  );
-
+  final _isScanningController = BehaviorSubject<bool>.seeded(false);
   Stream<bool> get isScanningStream => _isScanningController.stream;
 
-  final StreamController<List<FSensorInfo>> _sensorsController =
-      StreamController.broadcast();
+  Future<List<FSensorInfo>> get sensors async {
+    final scanner = await _ensureScanner();
+    final sensors = await scanner.getSensors();
+    return sensors.nonNulls.toList(growable: false);
+  }
 
   StreamSubscription<List<FSensorInfo>>? _sensorsSubscription;
-
+  final _sensorsController = BehaviorSubject<List<FSensorInfo>>.seeded(
+    const [],
+  );
   Stream<List<FSensorInfo>> get sensorsStream => _sensorsController.stream;
 
   Future<Scanner> _ensureScanner() async {
     if (_scanner case final scanner?) return scanner;
 
-    final scanner = await Scanner.create(_scannerSensorFilters);
-    scanner.sensorsStream.listen(_onSensorsChanged);
+    final scanner = await createScanner(_scannerSensorFilters);
+    scanner.sensorsStream.listen((event) {
+      _sensorsController.add(event);
+
+      final oldDevices = devices;
+      final newSensorInfos = Map.fromEntries(
+        event.map((sensorInfo) => MapEntry(sensorInfo.address, sensorInfo)),
+      );
+
+      final addressesUnion = <String>{
+        ...oldDevices.keys,
+        ...newSensorInfos.keys,
+      };
+
+      final newDevices = Map.fromEntries(
+        addressesUnion.map<MapEntry<String, CallibriDevice>?>((address) {
+          final oldDevice = oldDevices[address];
+          final newSensorInfo = newSensorInfos[address];
+          if (oldDevice != null && newSensorInfo != null) {
+            return MapEntry(address, oldDevice);
+          }
+          if (oldDevice != null) {
+            oldDevice.disconnect().then((_) => oldDevice.dispose());
+            return null;
+          }
+          if (newSensorInfo != null) {
+            final newDevice = CallibriDevice._(
+              scanner: scanner,
+              sensorInfo: newSensorInfo,
+            );
+            return MapEntry(address, newDevice);
+          }
+          return null;
+        }).nonNulls,
+      );
+      print("$oldDevices $newDevices");
+      _devicesController.add(newDevices);
+    });
 
     return _scanner = scanner;
   }
 
-  void _onSensorsChanged(List<FSensorInfo> event) {
-    _sensorsController.add(event);
-  }
+  @protected
+  Future<Scanner> createScanner(List<FSensorFamily> filters) async =>
+      await Scanner.create(filters);
 
   Future<void> start() async {
     final scanner = await _ensureScanner();
@@ -64,6 +203,18 @@ class CallibriController {
     _isScanningController.add(false);
   }
 
+  Future<CallibriDevice?> connectTo(FSensorInfo sensorInfo) async {
+    final scanner = await _ensureScanner();
+    final sensor = await scanner.createSensor(sensorInfo);
+    if (sensor is Callibri) {
+      // final device = CallibriDevice._(sensorInfo: sensorInfo, sensor: sensor);
+      // _devices[device.address] = device;
+      // return device;
+    }
+
+    return null;
+  }
+
   Future<void> dispose() async {
     _isScanningController.close();
 
@@ -75,199 +226,95 @@ class CallibriController {
   }
 }
 
-class IsolateCallibriController {
-  CallibriWorker? _worker;
+class MockCallibriController extends CallibriController {
+  @override
+  Future<Scanner> createScanner(List<FSensorFamily> filters) async =>
+      MockScanner(filters);
+}
 
-  StreamSubscription<bool>? _isScanningSubscription;
-  final _isScanningController = BehaviorSubject<bool>.seeded(false);
-  Stream<bool> get isScanningStream => _isScanningController.stream;
+class MockScanner implements Scanner {
+  MockScanner(this._filters)
+    : _dataValues = _createDataList(filters: _filters, amount: 5) {
+    _data = {
+      for (final sensorInfo in _dataValues) sensorInfo.address: sensorInfo,
+    };
+  }
 
-  StreamSubscription<List<FSensorInfo>>? _sensorsSubscription;
+  final List<FSensorInfo> _dataValues;
+  late final Map<String, FSensorInfo> _data;
+  final List<FSensorFamily> _filters;
+  Timer? _timer;
+
   final _sensorsController = StreamController<List<FSensorInfo>>.broadcast();
+
+  List<FSensorInfo> _shuffledSubList(int length) {
+    final shuffled = _dataValues.shuffled(_random);
+    if (length >= _data.length) return shuffled;
+    return shuffled.sublist(0, length);
+  }
+
+  @override
+  Future<Sensor?> createSensor(FSensorInfo sensorInfo) async {
+    if (!_data.containsKey(sensorInfo.address)) return null;
+    return null;
+  }
+
+  @override
+  Future<List<FSensorInfo?>> getSensors() async {
+    return const [];
+  }
+
+  @override
   Stream<List<FSensorInfo>> get sensorsStream => _sensorsController.stream;
 
-  Future<CallibriWorker> _ensureWorker() async {
-    if (_worker case final worker?) return worker;
-    final worker = await CallibriWorker.spawn();
-    _isScanningSubscription = worker.isScanningStream.listen((event) {
-      _isScanningController.add(event);
+  @override
+  Future<void> start() async {
+    final alwaysAvailable = _dataValues[_random.nextInt(_dataValues.length)];
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final sublist = _shuffledSubList(_random.nextInt(_dataValues.length))
+        ..remove(alwaysAvailable)
+        ..insert(0, alwaysAvailable);
+      _sensorsController.add(sublist);
     });
-    return _worker = worker;
   }
 
-  Future<void> start() async {
-    final worker = await _ensureWorker();
-    await worker.start();
-  }
-
+  @override
   Future<void> stop() async {
-    final worker = await _ensureWorker();
-    await worker.stop();
+    _timer?.cancel();
   }
 
-  Future<void> dispose() async {
-    if (_worker case final worker?) {
-      _isScanningSubscription?.cancel();
-      _isScanningController.close();
+  @override
+  void dispose() {}
 
-      _sensorsSubscription?.cancel();
-      _sensorsController.close();
-
-      worker.close();
-    }
-  }
-}
-
-abstract class _CallibriWorkerMessage {
-  const _CallibriWorkerMessage();
-}
-
-abstract class _CallibriWorkerIdentifiableMessage
-    extends _CallibriWorkerMessage {
-  const _CallibriWorkerIdentifiableMessage({required this.id});
-
-  final int id;
-}
-
-class _CallibriWorkerSpawnCommand extends _CallibriWorkerMessage {
-  const _CallibriWorkerSpawnCommand({
-    required this.rootIsolateToken,
-    required this.sendPort,
-  });
-
-  final RootIsolateToken rootIsolateToken;
-  final SendPort sendPort;
-}
-
-class _CallibriWorkerStartCommand extends _CallibriWorkerIdentifiableMessage {
-  const _CallibriWorkerStartCommand({required super.id});
-}
-
-class _CallibriWorkerStartResponse extends _CallibriWorkerIdentifiableMessage {
-  const _CallibriWorkerStartResponse({required super.id});
-}
-
-class _CallibriWorkerStopCommand extends _CallibriWorkerIdentifiableMessage {
-  const _CallibriWorkerStopCommand({required super.id});
-}
-
-class _CallibriWorkerCloseCommand extends _CallibriWorkerMessage {
-  const _CallibriWorkerCloseCommand();
-}
-
-class CallibriWorker {
-  CallibriWorker._(this._responses, this._commands) {
-    _responses.listen(_handleResponsesFromIsolate);
-  }
-
-  final SendPort _commands;
-  final ReceivePort _responses;
-
-  final Map<int, Completer<Object?>> _activeRequests =
-      <int, Completer<Object?>>{};
-  int _id = 0;
-
-  bool _closed = false;
-
-  final _isScanningController = BehaviorSubject<bool>.seeded(false);
-  Stream<bool> get isScanningStream => _isScanningController.stream;
-
-  void _handleResponsesFromIsolate(Object? response) {
-    switch (response) {
-      case _CallibriWorkerStartResponse(:final id):
-        final completer = _activeRequests.remove(id)!;
-        completer.complete();
-      default:
-    }
-
-    if (_closed && _activeRequests.isEmpty) _responses.close();
-  }
-
-  Future<void> start() async {
-    final completer = Completer<void>.sync();
-    final id = _id++;
-    _activeRequests[id] = completer;
-    _commands.send(_CallibriWorkerStartCommand(id: id));
-    return await completer.future;
-  }
-
-  Future<void> stop() async {}
-
-  void close() {
-    if (_closed) return;
-    _closed = true;
-    _commands.send(const _CallibriWorkerCloseCommand());
-    if (_activeRequests.isEmpty) {
-      _responses.close();
-    }
-  }
-
-  static void _startRemoteIsolate(_CallibriWorkerSpawnCommand initialCommand) {
-    final _CallibriWorkerSpawnCommand(:rootIsolateToken, :sendPort) =
-        initialCommand;
-
-    BackgroundIsolateBinaryMessenger.ensureInitialized(rootIsolateToken);
-
-    final receivePort = ReceivePort();
-    sendPort.send(receivePort.sendPort);
-
-    Scanner? scannerOrNull;
-
-    Future<Scanner> ensureScanner() async {
-      if (scannerOrNull case final scanner?) return scanner;
-      final scanner = await Scanner.create(_scannerSensorFilters);
-      return scannerOrNull = scanner;
-    }
-
-    void handleCommandsToIsolate(Object? command) async {
-      print(command);
-      switch (command) {
-        case _CallibriWorkerStartCommand(:final id):
-          final scanner = await ensureScanner();
-          await scanner.start();
-          sendPort.send(_CallibriWorkerStartResponse(id: id));
-        case _CallibriWorkerStopCommand():
-          final scanner = await ensureScanner();
-          await scanner.stop();
-        case _CallibriWorkerCloseCommand():
-          receivePort.close();
-        default:
-      }
-    }
-
-    receivePort.listen(handleCommandsToIsolate);
-  }
-
-  static Future<CallibriWorker> spawn() async {
-    final initPort = RawReceivePort();
-    final connection = Completer<(ReceivePort, SendPort)>.sync();
-
-    void handler(SendPort commandPort) {
-      connection.complete((
-        ReceivePort.fromRawReceivePort(initPort),
-        commandPort,
-      ));
-    }
-
-    initPort.handler = handler;
-
-    try {
-      await Isolate.spawn(
-        _startRemoteIsolate,
-        _CallibriWorkerSpawnCommand(
-          rootIsolateToken: RootIsolateToken.instance!,
-          sendPort: initPort.sendPort,
-        ),
+  static const _uuid = Uuid();
+  static final _random = math.Random();
+  static List<FSensorInfo> _createDataList({
+    required List<FSensorFamily> filters,
+    required int amount,
+  }) {
+    return List.generate(amount, (index) {
+      final address = _uuid.v4();
+      return FSensorInfo(
+        name: "Callibri_$index",
+        address: address,
+        serialNumber: _uuid.v4(),
+        pairingRequired: true,
+        sensModel: -1,
+        sensFamily: .leCallibri,
+        rssi: -1,
       );
-    } on Object {
-      initPort.close();
-      rethrow;
-    }
-
-    final (receivePort, sendPort) = await connection.future;
-
-    return CallibriWorker._(receivePort, sendPort);
+    });
   }
+
+  static Map<String, FSensorInfo> _createDataMap({
+    required List<FSensorFamily> filters,
+    required int amount,
+  }) => Map.fromEntries(
+    _createDataList(
+      filters: filters,
+      amount: amount,
+    ).map((sensorInfo) => MapEntry(sensorInfo.address, sensorInfo)),
+  );
 }
 
 class HomeView extends StatefulWidget {
@@ -360,169 +407,6 @@ class _HomeViewState extends State<HomeView> {
         ],
       ),
     );
-    // return Scaffold(
-    //   backgroundColor: colorTheme.surfaceContainer,
-    //   body: CustomScrollView(
-    //     slivers: [
-    //       // SliverHeader(minExtent: minExtent, maxExtent: maxExtent, builder: builder),
-    //       CustomAppBar(
-    //         type: .small,
-    //         collapsedContainerColor: colorTheme.surfaceContainer,
-    //         expandedContainerColor: colorTheme.surfaceContainer,
-    //         // title: Text("Нейротех"),
-    //         trailing: Padding(
-    //           padding: .fromLTRB(8.0, 0.0, 8.0, 0.0),
-    //           child: Flex.horizontal(
-    //             children: [
-    //               FilledButton.icon(
-    //                 style: LegacyThemeFactory.createButtonStyle(
-    //                   colorTheme: colorTheme,
-    //                   elevationTheme: elevationTheme,
-    //                   shapeTheme: shapeTheme,
-    //                   stateTheme: stateTheme,
-    //                   typescaleTheme: typescaleTheme,
-    //                   size: .small,
-    //                   color: .filled,
-    //                   unselectedContainerColor:
-    //                       colorTheme.surfaceContainerHighest,
-    //                   isSelected: false,
-    //                 ),
-    //                 onPressed: () {},
-    //                 icon: const IconLegacy(Symbols.battery_80_rounded),
-    //                 label: Text("80%"),
-    //               ),
-    //               IconButton(
-    //                 style: LegacyThemeFactory.createIconButtonStyle(
-    //                   colorTheme: colorTheme,
-    //                   elevationTheme: elevationTheme,
-    //                   shapeTheme: shapeTheme,
-    //                   stateTheme: stateTheme,
-    //                   typescaleTheme: typescaleTheme,
-    //                   size: .small,
-    //                   shape: .round,
-    //                   width: .normal,
-    //                   color: .standard,
-    //                   unselectedContainerColor:
-    //                       colorTheme.surfaceContainerHighest,
-    //                   isSelected: false,
-    //                 ),
-    //                 onPressed: () {},
-    //                 icon: const IconLegacy(Symbols.refresh_rounded, fill: 0.0),
-    //               ),
-    //               IconButton(
-    //                 style: LegacyThemeFactory.createIconButtonStyle(
-    //                   colorTheme: colorTheme,
-    //                   elevationTheme: elevationTheme,
-    //                   shapeTheme: shapeTheme,
-    //                   stateTheme: stateTheme,
-    //                   typescaleTheme: typescaleTheme,
-    //                   size: .small,
-    //                   shape: .round,
-    //                   width: .normal,
-    //                   color: .standard,
-    //                   unselectedContainerColor:
-    //                       colorTheme.surfaceContainerHighest,
-    //                   isSelected: false,
-    //                 ),
-    //                 onPressed: () {},
-    //                 icon: const IconLegacy(Symbols.keep_rounded, fill: 0.0),
-    //               ),
-    //               IconButton(
-    //                 style: LegacyThemeFactory.createIconButtonStyle(
-    //                   colorTheme: colorTheme,
-    //                   elevationTheme: elevationTheme,
-    //                   shapeTheme: shapeTheme,
-    //                   stateTheme: stateTheme,
-    //                   typescaleTheme: typescaleTheme,
-    //                   size: .small,
-    //                   shape: .round,
-    //                   width: .normal,
-    //                   color: .standard,
-    //                   unselectedContainerColor:
-    //                       colorTheme.surfaceContainerHighest,
-    //                   isSelected: false,
-    //                 ),
-    //                 onPressed: () {},
-    //                 icon: const IconLegacy(Symbols.settings_rounded),
-    //               ),
-    //             ],
-    //           ),
-    //         ),
-    //         // bottom: PreferredSize(
-    //         //   preferredSize: Size(.infinity, 4.0),
-    //         //   child: LinearProgressIndicator(value: null),
-    //         // ),
-    //       ),
-    //       SliverPadding(
-    //         padding: const .fromLTRB(8.0, 0.0, 8.0, 0.0),
-    //         sliver: SliverList.separated(
-    //           itemCount: 5,
-    //           separatorBuilder: (context, index) => const SizedBox(height: 2.0),
-    //           itemBuilder: (context, index) => ListItemContainer(
-    //             isFirst: index == 0,
-    //             isLast: index == 5 - 1,
-    //             child: ListItemInteraction(
-    //               onTap: () {},
-    //               child: ListItemLayout(
-    //                 isMultiline: false,
-    //                 leading: const Icon(Symbols.sensors),
-    //                 headline: Text("Callibri_Yellow"),
-    //                 trailing: const Text("80%"),
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //       ),
-    //       SliverList.list(
-    //         children: [
-    //           FilledButton(
-    //             style: LegacyThemeFactory.createButtonStyle(
-    //               colorTheme: colorTheme,
-    //               elevationTheme: elevationTheme,
-    //               shapeTheme: shapeTheme,
-    //               stateTheme: stateTheme,
-    //               typescaleTheme: typescaleTheme,
-    //               size: .medium,
-    //             ),
-    //             onPressed: () {},
-    //             child: Flex.horizontal(
-    //               mainAxisSize: .min,
-    //               spacing: 8.0,
-    //               children: [
-    //                 const IconLegacy(Symbols.add_rounded),
-    //                 const Text("Подключиться"),
-    //               ],
-    //             ),
-    //           ),
-    //           const SizedBox(height: 8.0),
-    //           Padding(
-    //             padding: const .fromLTRB(16.0, 8.0, 16.0, 12.0),
-    //             child: Flex.vertical(
-    //               crossAxisAlignment: CrossAxisAlignment.stretch,
-    //               children: [
-    //                 Align.center(
-    //                   child: SizedBox.square(
-    //                     dimension: 48.0,
-    //                     child: IndeterminateLoadingIndicator(contained: false),
-    //                   ),
-    //                 ),
-    //                 const SizedBox(height: 4.0),
-    //                 Text(
-    //                   "Ищем устройства",
-    //                   textAlign: TextAlign.center,
-    //                   overflow: TextOverflow.ellipsis,
-    //                   style: typescaleTheme.labelLarge.toTextStyle(
-    //                     color: colorTheme.primary,
-    //                   ),
-    //                 ),
-    //               ],
-    //             ),
-    //           ),
-    //         ],
-    //       ),
-    //     ],
-    //   ),
-    // );
   }
 }
 
@@ -534,12 +418,12 @@ class DevicesView extends StatefulWidget {
 }
 
 class _DevicesViewState extends State<DevicesView> {
-  late IsolateCallibriController _controller;
+  late CallibriController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = IsolateCallibriController();
+    _controller = MockCallibriController();
   }
 
   @override
@@ -585,11 +469,110 @@ class _DevicesViewState extends State<DevicesView> {
             title: Text("Подключение"),
             collapsedPadding: .fromLTRB(12.0 + 40.0 + 12.0, 0.0, 16.0, 0.0),
           ),
-          SliverList.list(
-            children: [
-              Padding(
+          StreamBuilder(
+            stream: _controller.devicesStream,
+            builder: (context, snapshot) {
+              final devices = snapshot.data ?? const {};
+              final devicesList = devices.values.toList(growable: false);
+              return SliverPadding(
                 padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
-                child: StreamBuilder(
+                sliver: SliverList.separated(
+                  itemCount: devicesList.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 2.0),
+                  itemBuilder: (context, index) {
+                    final sensorInfo = devicesList[index];
+                    return ListItemContainer(
+                      isFirst: index == 0,
+                      isLast: index == devices.length - 1,
+                      child: ListItemInteraction(
+                        onTap: () {},
+                        child: ListItemLayout(
+                          isMultiline: true,
+                          leading: SizedBox.square(
+                            dimension: 40.0,
+                            child: Material(
+                              color: colorTheme.surfaceContainer,
+                              shape: CornersBorder.rounded(
+                                corners: .all(shapeTheme.corner.full),
+                              ),
+                              child: Stack(
+                                alignment: .center,
+                                children: [
+                                  // SizedBox.square(
+                                  //   dimension: 40.0,
+                                  //   child: CircularProgressIndicator(
+                                  //     value: null,
+                                  //     padding: .zero,
+                                  //     strokeWidth: 2.0,
+                                  //     backgroundColor: Colors.transparent,
+                                  //   ),
+                                  // ),
+                                  Icon(
+                                    Symbols.add_rounded,
+                                    fill: 1.0,
+                                    color: colorTheme.primary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          headline: Text(
+                            sensorInfo.name,
+                            style: TextStyle(color: colorTheme.primary),
+                          ),
+                          supportingText: Text(
+                            "Нажмите, чтобы подключить",
+                            style: typescaleTheme.bodySmall.toTextStyle(
+                              color: colorTheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+          // SliverList.list(
+          //   children: [
+          //     Flex.vertical(
+          //       crossAxisAlignment: .stretch,
+          //       children: [
+          //         const SizedBox(height: 8.0),
+          //         Align.center(
+          //           child: SizedBox.square(
+          //             dimension: 64.0,
+          //             child: IndeterminateLoadingIndicator(contained: false),
+          //           ),
+          //         ),
+          //         const SizedBox(height: 4.0),
+          //         Text(
+          //           "Поиск устройств",
+          //           textAlign: .center,
+          //           overflow: .ellipsis,
+          //           style: typescaleTheme.labelLarge.toTextStyle(
+          //             color: colorTheme.primary,
+          //           ),
+          //         ),
+          //       ],
+          //     ),
+          //   ],
+          // ),
+        ],
+      ),
+      bottomNavigationBar: SizedBox(
+        width: .infinity,
+        child: Material(
+          color: backgroundColor,
+          child: Padding(
+            padding: const .fromLTRB(16.0, 16.0, 16.0, 16.0),
+            child: Flex.vertical(
+              mainAxisSize: .min,
+              crossAxisAlignment: .stretch,
+              children: [
+                StreamBuilder(
                   stream: _controller.isScanningStream,
                   builder: (context, snapshot) {
                     final isScanning = snapshot.data ?? false;
@@ -600,10 +583,12 @@ class _DevicesViewState extends State<DevicesView> {
                         shapeTheme: shapeTheme,
                         stateTheme: stateTheme,
                         typescaleTheme: typescaleTheme,
-                        size: .small,
+                        size: .medium,
                         shape: .square,
-                        color: .tonal,
+                        color: .filled,
                         isSelected: !isScanning,
+                        unselectedContainerColor:
+                            colorTheme.surfaceContainerHighest,
                       ),
                       onPressed: () {
                         if (isScanning) {
@@ -614,112 +599,34 @@ class _DevicesViewState extends State<DevicesView> {
                       },
                       child: Flex.horizontal(
                         mainAxisSize: .min,
-                        spacing: 8.0,
+                        spacing: isScanning ? 4.0 : 8.0,
                         children: [
-                          IconLegacy(
-                            isScanning
-                                ? Symbols.pause_rounded
-                                : Symbols.play_arrow_rounded,
-                            fill: 1.0,
-                          ),
-                          Text(
-                            isScanning ? "Остановить поиск" : "Начать поиск",
-                          ),
+                          // IconLegacy(
+                          //   isScanning
+                          //       ? Symbols.pause_rounded
+                          //       : Symbols.play_arrow_rounded,
+                          //   fill: 1.0,
+                          // ),
+                          if (isScanning)
+                            SizedBox.square(
+                              dimension: 24.0,
+                              child: IndeterminateLoadingIndicator(
+                                contained: false,
+                                indicatorColor: colorTheme.onSurfaceVariant,
+                              ),
+                            )
+                          else
+                            IconLegacy(Symbols.play_arrow_rounded, fill: 1.0),
+                          Text(isScanning ? "Пауза" : "Поиск"),
                         ],
                       ),
                     );
                   },
                 ),
-              ),
-              const SizedBox(height: 16.0 - 4.0),
-            ],
-          ),
-          SliverPadding(
-            padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
-            sliver: SliverList.separated(
-              itemCount: 3,
-              separatorBuilder: (context, index) => const SizedBox(height: 2.0),
-              itemBuilder: (context, index) => ListItemContainer(
-                isFirst: index == 0,
-                isLast: index == 3 - 1,
-                child: ListItemInteraction(
-                  onTap: () {},
-                  child: ListItemLayout(
-                    isMultiline: true,
-                    leading: SizedBox.square(
-                      dimension: 40.0,
-                      child: Material(
-                        color: colorTheme.surfaceContainer,
-                        shape: CornersBorder.rounded(
-                          corners: .all(shapeTheme.corner.full),
-                        ),
-                        child: Stack(
-                          alignment: .center,
-                          children: [
-                            // SizedBox.square(
-                            //   dimension: 40.0,
-                            //   child: CircularProgressIndicator(
-                            //     value: null,
-                            //     padding: .zero,
-                            //     strokeWidth: 2.0,
-                            //     backgroundColor: Colors.transparent,
-                            //   ),
-                            // ),
-                            Icon(
-                              Symbols.add_rounded,
-                              fill: 1.0,
-                              color: colorTheme.primary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    headline: Text(
-                      "Callibri_Yellow",
-                      style: TextStyle(color: colorTheme.primary),
-                    ),
-                    supportingText: Text(
-                      "Нажмите, чтобы подключить",
-                      style: typescaleTheme.bodySmall.toTextStyle(
-                        color: colorTheme.onSurface,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              ],
             ),
           ),
-          SliverList.list(
-            children: [
-              StreamBuilder(
-                stream: _controller.sensorsStream,
-                builder: (context, snapshot) => Text("${snapshot.data}"),
-              ),
-
-              Flex.vertical(
-                crossAxisAlignment: .stretch,
-                children: [
-                  const SizedBox(height: 8.0),
-                  Align.center(
-                    child: SizedBox.square(
-                      dimension: 64.0,
-                      child: IndeterminateLoadingIndicator(contained: false),
-                    ),
-                  ),
-                  const SizedBox(height: 4.0),
-                  Text(
-                    "Поиск устройств",
-                    textAlign: .center,
-                    overflow: .ellipsis,
-                    style: typescaleTheme.labelLarge.toTextStyle(
-                      color: colorTheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

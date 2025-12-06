@@ -54,7 +54,7 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
       isLoading = true;
       devices = [];
     });
-    await Future.delayed(Duration(seconds: 2));
+    await Future.delayed(Duration(seconds: 5));
     await sc.stop();
     List<FSensorInfo?> sensors = await sc.getSensors();
     List<String> newDevs = [];

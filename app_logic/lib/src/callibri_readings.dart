@@ -6,18 +6,19 @@ import 'package:bixat_key_mouse/bixat_key_mouse.dart';
 
 import 'package:app_logic/src/key_mouse_functions.dart';
 
-
-
-
 class CallibriReadings {
   Vector3 acceleration = Vector3.zero();
   double muscleSignal = 0.0;
 
   double mouseSens = 200.0;
-  double gyroSens = 0.1;
+  double gyroSens = 0.2;
   double scrollSens = 0.01;
-  final double mouseMoveThreshold = 0.05;
+  final double mouseMoveThreshold = 2.0;
   final double scrollThreshold = 0.4;
+
+  final int calibration_n = 100;
+  int calibration_cnt = 0;
+  Vector3 calibration_vector = Vector3.zero();
 
   List<Vector3> gyro_deltas = List<Vector3>.filled(15, Vector3.zero());
   List<Vector3> accel_deltas = List<Vector3>.filled(15, Vector3.zero());
@@ -42,7 +43,11 @@ class CallibriReadings {
     // print(accelerationList.map((e) => e,));
 
     // calculations
-    Vector3 acceleration = Vector3(accelerationList.last.x, accelerationList.last.y, accelerationList.last.z);
+    Vector3 acceleration = Vector3(
+      accelerationList.last.x,
+      accelerationList.last.y,
+      accelerationList.last.z,
+    );
     Vector3 delta = acceleration - lastAcceleration;
     lastAcceleration = acceleration;
 
@@ -60,13 +65,17 @@ class CallibriReadings {
     // move mouse
     Vector3 movement = Vector3.zero();
 
-    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold) movement.x = delta.x;
-    if (delta.y > mouseMoveThreshold || delta.y < -mouseMoveThreshold) movement.y = delta.y;
-    move_mouse(-(movement.x * mouseSens).ceil(), -(movement.y * mouseSens).ceil());
+    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold)
+      movement.x = delta.x;
+    if (delta.y > mouseMoveThreshold || delta.y < -mouseMoveThreshold)
+      movement.y = delta.y;
+    move_mouse(
+      -(movement.x * mouseSens).ceil(),
+      -(movement.y * mouseSens).ceil(),
+    );
   }
 
   void set_gyro(Iterable<Point3D> gyro) {
-    
     // calculations
     Vector3 vel = Vector3(gyro.last.x, gyro.last.y, gyro.last.z);
     Vector3 delta = vel; // - lastVel;
@@ -83,12 +92,28 @@ class CallibriReadings {
     avgDelta /= gyro_deltas.length.toDouble();
     delta = avgDelta;
 
+    // calibration
+    if (calibration_cnt <= calibration_n) {
+      if (calibration_cnt == calibration_n) {
+        calibration_vector = avgDelta;
+      }
+      calibration_cnt++;
+      return;
+    }
+
     // move mouse
     Vector3 movement = Vector3.zero();
 
-    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold) movement.x = delta.x;
-    if (delta.y > mouseMoveThreshold || delta.y < -mouseMoveThreshold) movement.y = delta.y;
-    move_mouse(-(movement.x * gyroSens).ceil(), (movement.y * gyroSens).ceil());
+    delta -= calibration_vector;
+
+    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold)
+      movement.y = -delta.x;
+    if (delta.z > mouseMoveThreshold || delta.z < -mouseMoveThreshold)
+      movement.x = -delta.z;
+
+    print(movement.toString() + " | " + calibration_vector.toString());
+
+    move_mouse((movement.x * gyroSens).ceil(), (movement.y * gyroSens).ceil());
   }
 
   void set_muscle_signal(Iterable<List<double>> signal) {
@@ -100,9 +125,6 @@ class CallibriReadings {
 
     print(avg_signal);
   }
-
-
 }
-
 
 CallibriReadings callibri_readings = CallibriReadings();

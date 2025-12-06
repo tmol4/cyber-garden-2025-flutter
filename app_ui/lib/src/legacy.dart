@@ -254,6 +254,9 @@ abstract final class LegacyThemeFactory {
     Color? containerColor,
     Color? unselectedContainerColor,
     Color? selectedContainerColor,
+    Color? contentColor,
+    Color? unselectedContentColor,
+    Color? selectedContentColor,
   }) {
     final isUnselectedNotDefault = isSelected == false;
     final isUnselectedDefault = isSelected != true;
@@ -344,21 +347,29 @@ abstract final class LegacyThemeFactory {
                 : Colors.transparent,
           .text => Colors.transparent,
         };
-    final foregroundColor = switch (color) {
-      .elevated =>
-        isSelectedNotDefault ? colorTheme.onPrimary : colorTheme.primary,
-      .filled =>
-        isSelectedDefault ? colorTheme.onPrimary : colorTheme.onSurfaceVariant,
-      .tonal =>
-        isSelectedNotDefault
-            ? colorTheme.onSecondary
-            : colorTheme.onSecondaryContainer,
-      .outlined =>
-        isSelectedNotDefault
-            ? colorTheme.inverseOnSurface
-            : colorTheme.onSurfaceVariant,
-      .text => colorTheme.primary,
-    };
+    final foregroundColor =
+        switch (isSelected) {
+          null => contentColor,
+          false => unselectedContentColor,
+          true => selectedContentColor,
+        } ??
+        switch (color) {
+          .elevated =>
+            isSelectedNotDefault ? colorTheme.onPrimary : colorTheme.primary,
+          .filled =>
+            isSelectedDefault
+                ? colorTheme.onPrimary
+                : colorTheme.onSurfaceVariant,
+          .tonal =>
+            isSelectedNotDefault
+                ? colorTheme.onSecondary
+                : colorTheme.onSecondaryContainer,
+          .outlined =>
+            isSelectedNotDefault
+                ? colorTheme.inverseOnSurface
+                : colorTheme.onSurfaceVariant,
+          .text => colorTheme.primary,
+        };
     final disabledBackgroundColor = colorTheme.onSurface.withValues(
       alpha: 0.10,
     );

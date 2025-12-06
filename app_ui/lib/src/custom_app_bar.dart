@@ -112,8 +112,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
 
   CustomAppBarBehavior get _behavior => widget.behavior ?? .duplicate;
 
-  TypeStyle get _collapsedTitleTypeStyle =>
-      _typescaleTheme.titleLargeEmphasized;
+  TypeStyle get _collapsedTitleTypeStyle => _typescaleTheme.titleLarge;
 
   TextStyle get _collapsedTitleTextStyle =>
       _collapsedTitleTypeStyle.toTextStyle(color: _colorTheme.onSurface);
@@ -143,8 +142,8 @@ class _CustomAppBarState extends State<CustomAppBar> {
 
   TypeStyle get _expandedTitleTypeStyle => switch (widget.type) {
     .small => _collapsedTitleTypeStyle,
-    .mediumFlexible => _typescaleTheme.titleMediumEmphasized,
-    .largeFlexible => _typescaleTheme.displaySmallEmphasized,
+    .mediumFlexible => _typescaleTheme.titleMedium,
+    .largeFlexible => _typescaleTheme.displaySmall,
   };
 
   TextStyle get _expandedTitleTextStyle =>

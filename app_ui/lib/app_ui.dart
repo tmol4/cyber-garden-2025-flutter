@@ -117,28 +117,25 @@ class CallibriController {
 
   Scanner? _scanner;
 
-  Map<String, CallibriDevice> get devices => _devicesController.value;
-  final _devicesController =
-      BehaviorSubject<Map<String, CallibriDevice>>.seeded(const {});
+  final _devicesController = BehaviorSubject<Map<String, CallibriDevice>>();
   Stream<Map<String, CallibriDevice>> get devicesStream =>
       _devicesController.stream;
+  Map<String, CallibriDevice>? get devices => _devicesController.valueOrNull;
 
-  bool _isScanning = false;
-  bool get isScanning => _isScanning;
   final _isScanningController = BehaviorSubject<bool>.seeded(false);
   Stream<bool> get isScanningStream => _isScanningController.stream;
+  bool get isScanning => _isScanningController.value;
 
-  Future<List<FSensorInfo>> get sensors async {
+  Future<List<FSensorInfo>> get sensorsFuture async {
     final scanner = await _ensureScanner();
     final sensors = await scanner.getSensors();
     return sensors.nonNulls.toList(growable: false);
   }
 
   StreamSubscription<List<FSensorInfo>>? _sensorsSubscription;
-  final _sensorsController = BehaviorSubject<List<FSensorInfo>>.seeded(
-    const [],
-  );
-  Stream<List<FSensorInfo>> get sensorsStream => _sensorsController.stream;
+  final _sensorsController = BehaviorSubject<List<FSensorInfo>>();
+  Stream<List<FSensorInfo>?> get sensorsStream => _sensorsController.stream;
+  List<FSensorInfo>? get sensors => _sensorsController.valueOrNull;
 
   Future<Scanner> _ensureScanner() async {
     if (_scanner case final scanner?) return scanner;
@@ -147,7 +144,7 @@ class CallibriController {
     scanner.sensorsStream.listen((event) {
       _sensorsController.add(event);
 
-      final oldDevices = devices;
+      final oldDevices = devices ?? const {};
       final newSensorInfos = Map.fromEntries(
         event.map((sensorInfo) => MapEntry(sensorInfo.address, sensorInfo)),
       );
@@ -178,7 +175,6 @@ class CallibriController {
           return null;
         }).nonNulls,
       );
-      print("$oldDevices $newDevices");
       _devicesController.add(newDevices);
     });
 
@@ -192,14 +188,12 @@ class CallibriController {
   Future<void> start() async {
     final scanner = await _ensureScanner();
     await scanner.start();
-    _isScanning = true;
     _isScanningController.add(true);
   }
 
   Future<void> stop() async {
     final scanner = await _ensureScanner();
     await scanner.stop();
-    _isScanning = false;
     _isScanningController.add(false);
   }
 
@@ -234,7 +228,9 @@ class MockCallibriController extends CallibriController {
 
 class MockScanner implements Scanner {
   MockScanner(this._filters)
-    : _dataValues = _createDataList(filters: _filters, amount: 5) {
+    : _dataValues = UnmodifiableListView(
+        _createDataList(filters: _filters, amount: 25),
+      ) {
     _data = {
       for (final sensorInfo in _dataValues) sensorInfo.address: sensorInfo,
     };
@@ -305,16 +301,6 @@ class MockScanner implements Scanner {
       );
     });
   }
-
-  static Map<String, FSensorInfo> _createDataMap({
-    required List<FSensorFamily> filters,
-    required int amount,
-  }) => Map.fromEntries(
-    _createDataList(
-      filters: filters,
-      amount: amount,
-    ).map((sensorInfo) => MapEntry(sensorInfo.address, sensorInfo)),
-  );
 }
 
 class HomeView extends StatefulWidget {
@@ -344,25 +330,50 @@ class _HomeViewState extends State<HomeView> {
             title: Text("Нейротех"),
             trailing: Padding(
               padding: .fromLTRB(0.0, 0.0, 12.0 - 4.0, 0.0),
-              child: IconButton(
-                style: LegacyThemeFactory.createIconButtonStyle(
-                  colorTheme: colorTheme,
-                  elevationTheme: elevationTheme,
-                  shapeTheme: shapeTheme,
-                  stateTheme: stateTheme,
-                  typescaleTheme: typescaleTheme,
-                  color: .filled,
-                  unselectedContainerColor: colorTheme.surfaceContainerHighest,
-                  isSelected: false,
-                ),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (context) => const AboutView(),
+              child: Flex.horizontal(
+                children: [
+                  IconButton(
+                    style: LegacyThemeFactory.createIconButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      width: .wide,
+                      color: .filled,
+                      unselectedContainerColor:
+                          colorTheme.surfaceContainerHighest,
+                      isSelected: false,
+                    ),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (context) => const SettingsView(),
+                      ),
+                    ),
+                    icon: const IconLegacy(Symbols.settings_rounded, fill: 1.0),
+                    tooltip: "Настройки",
                   ),
-                ),
-                icon: const IconLegacy(Symbols.info_rounded, fill: 1.0),
-                tooltip: "О приложении",
+                  IconButton(
+                    style: LegacyThemeFactory.createIconButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      width: .narrow,
+                      color: .standard,
+                    ),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (context) => const AboutView(),
+                      ),
+                    ),
+                    icon: const IconLegacy(Symbols.info_rounded, fill: 1.0),
+                    tooltip: "О приложении",
+                  ),
+                ],
               ),
             ),
           ),
@@ -419,15 +430,62 @@ class DevicesView extends StatefulWidget {
 
 class _DevicesViewState extends State<DevicesView> {
   late CallibriController _controller;
+  Timer? _timer;
+
+  void _startTimer() {
+    _timer = Timer(const Duration(seconds: 5), () {
+      _start();
+    });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _start() async {
+    setState(() => _stopTimer());
+    await _controller.start();
+  }
+
+  void _stop() async {
+    setState(() => _stopTimer());
+    await _controller.stop();
+  }
+
+  Widget _buildIsScanningStream({
+    required Widget Function(BuildContext context, bool isScanning) builder,
+  }) => StreamBuilder(
+    stream: _controller.isScanningStream,
+    initialData: _controller.isScanning,
+    builder: (context, snapshot) {
+      final isScanning = snapshot.data ?? _controller.isScanning;
+      return builder(context, isScanning);
+    },
+  );
+  Widget _buildDevicesStream({
+    required Widget Function(
+      BuildContext context,
+      Map<String, CallibriDevice>? devices,
+    )
+    builder,
+  }) => StreamBuilder(
+    stream: _controller.devicesStream,
+    initialData: _controller.devices,
+    builder: (context, snapshot) =>
+        builder(context, snapshot.data ?? _controller.devices),
+  );
 
   @override
   void initState() {
     super.initState();
     _controller = MockCallibriController();
+    _startTimer();
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -444,96 +502,282 @@ class _DevicesViewState extends State<DevicesView> {
       backgroundColor: backgroundColor,
       body: CustomScrollView(
         slivers: [
-          CustomAppBar(
-            type: .small,
-            collapsedContainerColor: backgroundColor,
-            expandedContainerColor: backgroundColor,
-            leading: Padding(
-              padding: const .fromLTRB(12.0 - 4.0, 0.0, 12.0 - 4.0, 0.0),
-              child: IconButton(
-                style: LegacyThemeFactory.createIconButtonStyle(
-                  colorTheme: colorTheme,
-                  elevationTheme: elevationTheme,
-                  shapeTheme: shapeTheme,
-                  stateTheme: stateTheme,
-                  typescaleTheme: typescaleTheme,
-                  color: .filled,
-                  unselectedContainerColor: colorTheme.surfaceContainerHighest,
-                  isSelected: false,
+          _buildDevicesStream(
+            builder: (context, devices) {
+              final canSearch =
+                  kDebugMode && devices != null && devices.isNotEmpty;
+              return CustomAppBar(
+                type: .small,
+                collapsedContainerColor: backgroundColor,
+                expandedContainerColor: backgroundColor,
+                leading: Padding(
+                  padding: const .fromLTRB(12.0 - 4.0, 0.0, 12.0 - 4.0, 0.0),
+                  child: IconButton(
+                    style: LegacyThemeFactory.createIconButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      color: .filled,
+                      unselectedContainerColor:
+                          colorTheme.surfaceContainerHighest,
+                      isSelected: false,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const IconLegacy(Symbols.arrow_back_rounded),
+                    tooltip: "Назад",
+                  ),
                 ),
-                onPressed: () => Navigator.pop(context),
-                icon: const IconLegacy(Symbols.arrow_back_rounded),
-                tooltip: "Назад",
-              ),
-            ),
-            title: Text("Подключение"),
-            collapsedPadding: .fromLTRB(12.0 + 40.0 + 12.0, 0.0, 16.0, 0.0),
-          ),
-          StreamBuilder(
-            stream: _controller.devicesStream,
-            builder: (context, snapshot) {
-              final devices = snapshot.data ?? const {};
-              final devicesList = devices.values.toList(growable: false);
-              return SliverPadding(
-                padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
-                sliver: SliverList.separated(
-                  itemCount: devicesList.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 2.0),
-                  itemBuilder: (context, index) {
-                    final sensorInfo = devicesList[index];
-                    return ListItemContainer(
-                      isFirst: index == 0,
-                      isLast: index == devices.length - 1,
-                      child: ListItemInteraction(
-                        onTap: () {},
-                        child: ListItemLayout(
-                          isMultiline: true,
-                          leading: SizedBox.square(
-                            dimension: 40.0,
-                            child: Material(
-                              color: colorTheme.surfaceContainer,
-                              shape: CornersBorder.rounded(
-                                corners: .all(shapeTheme.corner.full),
-                              ),
-                              child: Stack(
-                                alignment: .center,
-                                children: [
-                                  // SizedBox.square(
-                                  //   dimension: 40.0,
-                                  //   child: CircularProgressIndicator(
-                                  //     value: null,
-                                  //     padding: .zero,
-                                  //     strokeWidth: 2.0,
-                                  //     backgroundColor: Colors.transparent,
-                                  //   ),
-                                  // ),
-                                  Icon(
-                                    Symbols.add_rounded,
-                                    fill: 1.0,
-                                    color: colorTheme.primary,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          headline: Text(
-                            sensorInfo.name,
-                            style: TextStyle(color: colorTheme.primary),
-                          ),
-                          supportingText: Text(
-                            "Нажмите, чтобы подключить",
-                            style: typescaleTheme.bodySmall.toTextStyle(
-                              color: colorTheme.onSurface,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                title: Text("Подключение"),
+                trailing: Padding(
+                  padding: const .fromLTRB(12.0 - 4.0, 0.0, 12.0 - 4.0, 0.0),
+                  child: IconButton(
+                    style: LegacyThemeFactory.createIconButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      color: .tonal,
+                      width: .wide,
+                    ),
+                    onPressed: canSearch ? () {} : null,
+                    icon: const IconLegacy(Symbols.search_rounded),
+                    tooltip: "Поиск",
+                  ),
+                ),
+                collapsedPadding: .fromLTRB(
+                  12.0 + 40.0 + 12.0,
+                  0.0,
+                  12.0 + 40.0 + 12.0,
+                  0.0,
                 ),
               );
             },
+          ),
+          _buildIsScanningStream(
+            builder: (context, isScanning) => _buildDevicesStream(
+              builder: (context, devices) {
+                if (devices != null && devices.isNotEmpty) {
+                  final devicesList = devices.values.toList(growable: false);
+                  return SliverPadding(
+                    padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
+                    sliver: SliverList.separated(
+                      itemCount: devicesList.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 2.0),
+                      itemBuilder: (context, index) {
+                        final sensorInfo = devicesList[index];
+                        return ListItemContainer(
+                          isFirst: index == 0,
+                          isLast: index == devices.length - 1,
+                          child: ListItemInteraction(
+                            onTap: () {},
+                            child: ListItemLayout(
+                              isMultiline: true,
+                              leading: SizedBox.square(
+                                dimension: 40.0,
+                                child: Material(
+                                  color: colorTheme.surfaceContainer,
+                                  shape: CornersBorder.rounded(
+                                    corners: .all(shapeTheme.corner.full),
+                                  ),
+                                  child: Stack(
+                                    alignment: .center,
+                                    children: [
+                                      // SizedBox.square(
+                                      //   dimension: 40.0,
+                                      //   child: CircularProgressIndicator(
+                                      //     value: null,
+                                      //     padding: .zero,
+                                      //     strokeWidth: 2.0,
+                                      //     backgroundColor: Colors.transparent,
+                                      //   ),
+                                      // ),
+                                      Icon(
+                                        Symbols.add_rounded,
+                                        fill: 1.0,
+                                        color: colorTheme.primary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              headline: Text(
+                                sensorInfo.name,
+                                style: TextStyle(color: colorTheme.primary),
+                              ),
+                              supportingText: Text(
+                                "Нажмите, чтобы подключить",
+                                style: typescaleTheme.bodySmall.toTextStyle(
+                                  color: colorTheme.onSurface,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                } else {
+                  final Widget child;
+                  if (_timer != null) {
+                    child = Padding(
+                      padding: .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                      child: Flex.vertical(
+                        mainAxisAlignment: .center,
+                        crossAxisAlignment: .stretch,
+                        children: [
+                          Icon(
+                            Symbols.timer_rounded,
+                            fill: 1.0,
+                            size: 40.0,
+                            color: colorTheme.primary,
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Автостарт",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyLarge.toTextStyle(
+                              color: colorTheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Через несколько секунд начнётся автоматическое сканирование устройств",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyMedium.toTextStyle(
+                              color: colorTheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 16.0 - 4.0),
+                          Align.center(
+                            child: FilledButton(
+                              style: LegacyThemeFactory.createButtonStyle(
+                                colorTheme: colorTheme,
+                                elevationTheme: elevationTheme,
+                                shapeTheme: shapeTheme,
+                                stateTheme: stateTheme,
+                                typescaleTheme: typescaleTheme,
+                                size: .small,
+                                shape: .round,
+                                color: .tonal,
+                              ),
+                              onPressed: () {
+                                setState(() => _stopTimer());
+                              },
+                              child: Text("Отмена"),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else if (!isScanning) {
+                    child = Padding(
+                      padding: .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                      child: Flex.vertical(
+                        mainAxisAlignment: .center,
+                        crossAxisAlignment: .stretch,
+                        children: [
+                          Icon(
+                            Symbols.stop_circle_rounded,
+                            fill: 1.0,
+                            color: colorTheme.primary,
+                            size: 40.0,
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Поиск остановлен",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyLarge.toTextStyle(
+                              color: colorTheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Нажмите \"Сканировать\", чтобы начать сканирование",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyMedium.toTextStyle(
+                              color: colorTheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else if (devices != null && devices.isEmpty) {
+                    child = Padding(
+                      padding: .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                      child: Flex.vertical(
+                        mainAxisAlignment: .center,
+                        crossAxisAlignment: .stretch,
+                        children: [
+                          Icon(
+                            Symbols.radar_rounded,
+                            fill: 1.0,
+                            color: colorTheme.primary,
+                            size: 40.0,
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Устройств не обнаружено",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyLarge.toTextStyle(
+                              color: colorTheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Попробуйте провести стандартные процедуры устранения неполадок",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyMedium.toTextStyle(
+                              color: colorTheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    child = Padding(
+                      padding: .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                      child: Flex.vertical(
+                        mainAxisAlignment: .center,
+                        crossAxisAlignment: .stretch,
+                        children: [
+                          Icon(
+                            Symbols.radar_rounded,
+                            fill: 1.0,
+                            color: colorTheme.primary,
+                            size: 40.0,
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Начинаем сканирование",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyLarge.toTextStyle(
+                              color: colorTheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8.0),
+                          Text(
+                            "Здесь появится список найденных устройств",
+                            textAlign: .center,
+                            style: typescaleTheme.bodyMedium.toTextStyle(
+                              color: colorTheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return SliverFillRemaining(
+                    fillOverscroll: false,
+                    hasScrollBody: false,
+                    child: child,
+                  );
+                }
+              },
+            ),
           ),
           // SliverList.list(
           //   children: [
@@ -572,61 +816,117 @@ class _DevicesViewState extends State<DevicesView> {
               mainAxisSize: .min,
               crossAxisAlignment: .stretch,
               children: [
-                StreamBuilder(
-                  stream: _controller.isScanningStream,
-                  builder: (context, snapshot) {
-                    final isScanning = snapshot.data ?? false;
-                    return FilledButton(
-                      style: LegacyThemeFactory.createButtonStyle(
-                        colorTheme: colorTheme,
-                        elevationTheme: elevationTheme,
-                        shapeTheme: shapeTheme,
-                        stateTheme: stateTheme,
-                        typescaleTheme: typescaleTheme,
-                        size: .medium,
-                        shape: .square,
-                        color: .filled,
-                        isSelected: !isScanning,
-                        unselectedContainerColor:
-                            colorTheme.surfaceContainerHighest,
-                      ),
-                      onPressed: () {
-                        if (isScanning) {
-                          _controller.stop();
-                        } else {
-                          _controller.start();
-                        }
-                      },
-                      child: Flex.horizontal(
-                        mainAxisSize: .min,
-                        spacing: isScanning ? 4.0 : 8.0,
-                        children: [
-                          // IconLegacy(
-                          //   isScanning
-                          //       ? Symbols.pause_rounded
-                          //       : Symbols.play_arrow_rounded,
-                          //   fill: 1.0,
-                          // ),
-                          if (isScanning)
-                            SizedBox.square(
-                              dimension: 24.0,
-                              child: IndeterminateLoadingIndicator(
-                                contained: false,
-                                indicatorColor: colorTheme.onSurfaceVariant,
-                              ),
-                            )
-                          else
-                            IconLegacy(Symbols.play_arrow_rounded, fill: 1.0),
-                          Text(isScanning ? "Пауза" : "Поиск"),
-                        ],
-                      ),
-                    );
-                  },
+                _buildIsScanningStream(
+                  builder: (context, isScanning) => FilledButton(
+                    style: LegacyThemeFactory.createButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      size: .medium,
+                      shape: .square,
+                      color: .filled,
+                      isSelected: !isScanning,
+                      unselectedContainerColor:
+                          colorTheme.surfaceContainerHighest,
+                    ),
+                    onPressed: () {
+                      if (isScanning) {
+                        _stop();
+                      } else {
+                        _start();
+                      }
+                    },
+                    child: Flex.horizontal(
+                      mainAxisSize: .min,
+                      spacing: isScanning ? 8.0 : 8.0,
+                      children: [
+                        // IconLegacy(
+                        //   isScanning
+                        //       ? Symbols.pause_rounded
+                        //       : Symbols.play_arrow_rounded,
+                        //   fill: 1.0,
+                        // ),
+                        if (isScanning)
+                          SizedBox.square(
+                            dimension: 24.0,
+                            child: IndeterminateLoadingIndicator(
+                              contained: false,
+                              indicatorColor: colorTheme.onSurfaceVariant,
+                            ),
+                            // child: CircularProgressIndicator(
+                            //   value: null,
+                            //   strokeWidth: 2.0,
+                            //   color: colorTheme.onSurfaceVariant,
+                            //   backgroundColor: Colors.transparent,
+                            // ),
+                          )
+                        else
+                          const IconLegacy(
+                            Symbols.play_arrow_rounded,
+                            fill: 1.0,
+                          ),
+                        Text(isScanning ? "Приостановить" : "Сканировать"),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class SettingsView extends StatefulWidget {
+  const SettingsView({super.key});
+
+  @override
+  State<SettingsView> createState() => _SettingsViewState();
+}
+
+class _SettingsViewState extends State<SettingsView> {
+  @override
+  Widget build(BuildContext context) {
+    final colorTheme = ColorTheme.of(context);
+    final shapeTheme = ShapeTheme.of(context);
+    final stateTheme = StateTheme.of(context);
+    final elevationTheme = ElevationTheme.of(context);
+    final typescaleTheme = TypescaleTheme.of(context);
+    final backgroundColor = colorTheme.surfaceContainer;
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: CustomScrollView(
+        slivers: [
+          CustomAppBar(
+            type: .small,
+            collapsedContainerColor: backgroundColor,
+            expandedContainerColor: backgroundColor,
+            leading: Padding(
+              padding: const .fromLTRB(12.0 - 4.0, 0.0, 12.0 - 4.0, 0.0),
+              child: IconButton(
+                style: LegacyThemeFactory.createIconButtonStyle(
+                  colorTheme: colorTheme,
+                  elevationTheme: elevationTheme,
+                  shapeTheme: shapeTheme,
+                  stateTheme: stateTheme,
+                  typescaleTheme: typescaleTheme,
+                  color: .filled,
+                  unselectedContainerColor: colorTheme.surfaceContainerHighest,
+                  isSelected: false,
+                ),
+                onPressed: () => Navigator.pop(context),
+                icon: const IconLegacy(Symbols.arrow_back_rounded),
+                tooltip: "Назад",
+              ),
+            ),
+            title: Text("Настройки"),
+            collapsedPadding: .fromLTRB(12.0 + 40.0 + 12.0, 0.0, 16.0, 0.0),
+          ),
+        ],
       ),
     );
   }
@@ -936,12 +1236,4 @@ class _AboutViewState extends State<AboutView> {
       ),
     );
   }
-}
-
-class UserData {
-  const UserData({this.image, required this.name, this.displayName});
-
-  final ImageProvider<Object?>? image;
-  final String name;
-  final String? displayName;
 }

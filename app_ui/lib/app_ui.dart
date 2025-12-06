@@ -6,6 +6,7 @@ export 'src/custom_app_bar.dart';
 export 'src/custom_list.dart';
 export 'src/legacy.dart';
 export 'src/utils.dart';
+export 'src/virtual_input.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -21,45 +22,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
-
-import 'package:bixat_key_mouse/src/key_code_manager.dart';
-import 'package:bixat_key_mouse/src/rust/api/bixat_key_mouse.dart'
-    show simulateKeyBase, simulateKeyCombinationBase;
-import 'package:win32/win32.dart' show MapVirtualKey, MapVirtualKeyEx;
-
-abstract final class InputSimulator {
-  static void simulateKey(UniversalKey key, {Direction direction = .click}) {
-    final int code;
-    if (Platform.isWindows) {
-      code = MapVirtualKey(key.code, 0);
-      if (code == 0) return;
-    } else {
-      code = key.code;
-    }
-    simulateKeyBase(key: code, direction: direction.index);
-  }
-
-  static void simulateKeyCombination(
-    List<UniversalKey> keys,
-    Duration duration,
-  ) {
-    final List<int> codes;
-    if (Platform.isWindows) {
-      codes = keys
-          .map((key) => MapVirtualKey(key.code, 0))
-          .toList(growable: false);
-      if (codes.any((value) => value <= 0)) {
-        return;
-      }
-    } else {
-      codes = keys.map((key) => key.code).toList(growable: false);
-    }
-    simulateKeyCombinationBase(
-      keys: codes,
-      durationMs: BigInt.from(duration.inMilliseconds),
-    );
-  }
-}
+import 'package:vector_math/vector_math_64.dart' show Vector3;
 
 const _scannerSensorFilters = <FSensorFamily>[.leCallibri, .leKolibri];
 
@@ -87,16 +50,26 @@ class CallibriValueStreamEvent<T extends Object?> extends CallibriStreamEvent {
 
 abstract interface class CallibriDevice {
   String get address;
+
   String get name;
 
   CallibriConnectionState get connectionState;
+
   Stream<CallibriConnectionState> get connectionStateStream;
 
   Future<int?> get batteryPowerFuture;
+
   int? get batteryPower;
+
   Stream<int?> get batteryPowerStream;
 
   Stream<List<MEMSData>> get memsDataStream;
+
+  Stream<List<CallibriSignalData>> get signalDataStream;
+
+  Stream<bool> get isActiveStream;
+
+  bool get isActive;
 }
 
 class MutableCallibriDevice implements CallibriDevice {
@@ -143,10 +116,29 @@ class MutableCallibriDevice implements CallibriDevice {
   @override
   int? get batteryPower => _batteryPowerController.value;
 
+  StreamSubscription<List<MEMSData>>? _memsDataSubscription;
+
   final _memsDataController = StreamController<List<MEMSData>>.broadcast();
 
   @override
   Stream<List<MEMSData>> get memsDataStream => _memsDataController.stream;
+
+  StreamSubscription<List<CallibriSignalData>>? _signalDataSubscription;
+
+  final _signalDataController =
+      StreamController<List<CallibriSignalData>>.broadcast();
+
+  @override
+  Stream<List<CallibriSignalData>> get signalDataStream =>
+      _signalDataController.stream;
+
+  final _isActiveController = BehaviorSubject<bool>.seeded(false);
+
+  @override
+  Stream<bool> get isActiveStream => _isActiveController.stream;
+
+  @override
+  bool get isActive => _isActiveController.value;
 
   @protected
   Future<Sensor?> createSensor() => _scanner.createSensor(_sensorInfo);
@@ -156,11 +148,18 @@ class MutableCallibriDevice implements CallibriDevice {
     try {
       final sensor = await _scanner.createSensor(_sensorInfo);
       if (sensor is Callibri) {
-        _batteryPowerSubscription = sensor.batteryPowerStream.listen((event) {
-          _batteryPowerController.add(event);
-        });
-        _connectionStateController.add(.connected);
+        _batteryPowerSubscription = sensor.batteryPowerStream.listen(
+          _batteryPowerController.add,
+        );
+        _memsDataSubscription = sensor.memsDataStream.listen(
+          _memsDataController.add,
+        );
+        _signalDataSubscription = sensor.signalDataStream.listen(
+          _signalDataController.add,
+        );
+        await sensor.signalType.set(.EMG);
         _sensor = sensor;
+        _connectionStateController.add(.connected);
       } else {
         _connectionStateController.add(.error);
       }
@@ -170,10 +169,37 @@ class MutableCallibriDevice implements CallibriDevice {
     }
   }
 
+  Future<void> setSamplingFrequency(FSensorSamplingFrequency value) async {
+    if (_sensor case final sensor?) {
+      await sensor.samplingFrequency.set(value);
+    }
+  }
+
+  Future<void> start() async {
+    if (_sensor case final sensor?) {
+      await sensor.execute(.startMEMS);
+      await sensor.execute(.startSignal);
+      _isActiveController.add(true);
+    }
+  }
+
+  Future<void> stop() async {
+    if (_sensor case final sensor?) {
+      await sensor.execute(.stopMEMS);
+      await sensor.execute(.stopSignal);
+      _isActiveController.add(false);
+    }
+  }
+
   Future<void> disconnect() async {
     _connectionStateController.add(.disconnection);
     try {
-      _batteryPowerSubscription?.cancel();
+      await stop();
+      await Future.wait<void>([
+        ?_signalDataSubscription?.cancel(),
+        ?_memsDataSubscription?.cancel(),
+        ?_batteryPowerSubscription?.cancel(),
+      ]);
       _batteryPowerController.add(null);
       await _sensor?.disconnect();
       await _sensor?.dispose();
@@ -186,13 +212,20 @@ class MutableCallibriDevice implements CallibriDevice {
   }
 
   Future<void> dispose() async {
+    _isActiveController.close();
+    _signalDataController.close();
+    _memsDataController.close();
     _batteryPowerController.close();
     _connectionStateController.close();
   }
 }
 
-class CallibriController {
-  CallibriController();
+extension Point3DExtension on Point3D {
+  Vector3 toVector3() => Vector3(x, y, z);
+}
+
+class CallibriScannerController {
+  CallibriScannerController();
 
   Scanner? _scanner;
 
@@ -276,18 +309,6 @@ class CallibriController {
     _isScanningController.add(false);
   }
 
-  Future<MutableCallibriDevice?> connectTo(FSensorInfo sensorInfo) async {
-    final scanner = await _ensureScanner();
-    final sensor = await scanner.createSensor(sensorInfo);
-    if (sensor is Callibri) {
-      // final device = CallibriDevice._(sensorInfo: sensorInfo, sensor: sensor);
-      // _devices[device.address] = device;
-      // return device;
-    }
-
-    return null;
-  }
-
   Future<void> dispose() async {
     _isScanningController.close();
 
@@ -309,7 +330,7 @@ class CallibriController {
   }
 }
 
-class MockCallibriController extends CallibriController {
+class MockCallibriController extends CallibriScannerController {
   @override
   Future<Scanner> createScanner(List<FSensorFamily> filters) async =>
       MockScanner(filters);
@@ -392,12 +413,12 @@ class MockScanner implements Scanner {
   }
 }
 
-class SingleDeviceController {
-  SingleDeviceController() {
+class CallibriSingleController {
+  CallibriSingleController() {
     _devicesSubscription = _controller.devicesStream.listen(_onDevicesChanged);
   }
 
-  final _controller = CallibriController();
+  final _controller = CallibriScannerController();
 
   StreamSubscription<List<MutableCallibriDevice>?>? _devicesSubscription;
 
@@ -416,6 +437,19 @@ class SingleDeviceController {
 
   List<CallibriDevice>? get devices => _controller.devices;
   Stream<List<CallibriDevice>?> get devicesStream => _controller.devicesStream;
+
+  FSensorSamplingFrequency? _samplingFrequency;
+
+  FSensorSamplingFrequency? get samplingFrequency => _samplingFrequency;
+
+  set samplingFrequency(FSensorSamplingFrequency? value) {
+    if (_samplingFrequency == value) return;
+    _samplingFrequency = value;
+    final currentDevice = _currentDevice;
+    if (currentDevice != null && value != null) {
+      currentDevice.setSamplingFrequency(value);
+    }
+  }
 
   void _onDevicesChanged(List<MutableCallibriDevice>? devices) async {
     devices ??= const [];
@@ -451,12 +485,27 @@ class SingleDeviceController {
       device as MutableCallibriDevice;
 
       await device.connect();
+      if (_samplingFrequency case final samplingFrequency?) {
+        await device.setSamplingFrequency(samplingFrequency);
+      }
       _currentDeviceController.add(device);
       return true;
     } on Object {
       _currentDeviceController.add(null);
       return false;
     }
+  }
+
+  Future<void> setSamplingFrequency(FSensorSamplingFrequency value) async {
+    await _currentDevice?.setSamplingFrequency(value);
+  }
+
+  Future<void> startData() async {
+    await _currentDevice?.start();
+  }
+
+  Future<void> stopData() async {
+    await _currentDevice?.stop();
   }
 
   Future<bool> disconnectFrom(CallibriDevice device) async {
@@ -466,7 +515,7 @@ class SingleDeviceController {
     try {
       assert(device is MutableCallibriDevice);
       device as MutableCallibriDevice;
-
+      await stopData();
       await device.disconnect();
       _currentDeviceController.add(null);
       return true;
@@ -480,6 +529,7 @@ class SingleDeviceController {
     final currentDevice = _currentDevice;
     if (currentDevice == null) return false;
     try {
+      await stopData();
       await currentDevice.disconnect();
       _currentDeviceController.add(null);
       return true;
@@ -496,10 +546,95 @@ class SingleDeviceController {
   }
 }
 
-class HomeView extends StatefulWidget {
-  const HomeView({super.key, required this.controller});
+enum GyroscopeControllerMode { calibration, calculation }
 
-  final SingleDeviceController controller;
+class GyroscopeController {
+  GyroscopeController({int buffer = 10})
+    : _cache = .generate(buffer, (_) => .zero());
+
+  final List<Vector3> _cache;
+  var _cacheIndex = 0;
+
+  final _correctionVector = Vector3.zero();
+  var _calibrationsAmount = 0;
+
+  final _modeController = BehaviorSubject<GyroscopeControllerMode>.seeded(
+    .calibration,
+  );
+
+  Stream<GyroscopeControllerMode> get modeStream => _modeController.stream;
+
+  GyroscopeControllerMode get mode => _modeController.value;
+
+  set mode(GyroscopeControllerMode value) {
+    if (mode == value) return;
+    _modeController.add(value);
+    switch (value) {
+      case .calibration:
+        _correctionVector.setZero();
+        _calibrationsAmount = 0;
+      default:
+    }
+  }
+
+  Vector3 _calculateAverageVector(Iterable<Vector3> values) {
+    final result = Vector3.zero();
+    var amount = 0;
+    for (final value in values) {
+      result.add(value);
+      amount++;
+    }
+    final amountDouble = amount.toDouble();
+    result.setValues(
+      result.x / amountDouble,
+      result.y / amountDouble,
+      result.z / amountDouble,
+    );
+    return result;
+  }
+
+  void _addToCache(Iterable<Vector3> data) {
+    for (final value in data) {
+      _cache[_cacheIndex].setFrom(value);
+      _cacheIndex = (_cacheIndex + 1) % _cache.length;
+    }
+  }
+
+  void add(Iterable<Vector3> data) {
+    if (data.isEmpty) return;
+    const mouseMoveThreshold = 2.0;
+    _addToCache(data);
+    switch (mode) {
+      case .calibration:
+        for (final value in data) {
+          _correctionVector.add(value);
+          _calibrationsAmount++;
+        }
+      case .calculation:
+        final averageVelocity = _calculateAverageVector(_cache);
+        final averageCorrection =
+            _correctionVector / _calibrationsAmount.toDouble();
+        averageVelocity.sub(averageCorrection);
+        print(averageVelocity);
+    }
+  }
+
+  void addMemsData(Iterable<MEMSData> data) {
+    add(data.map((value) => value.gyroscope.toVector3()));
+  }
+
+  void dispose() {}
+}
+
+class HomeView extends StatefulWidget {
+  const HomeView({
+    super.key,
+    required this.controller,
+    required this.gyroscopeController,
+  });
+
+  final CallibriSingleController controller;
+  final GyroscopeController gyroscopeController;
 
   @override
   State<HomeView> createState() => _HomeViewState();
@@ -507,20 +642,104 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   final _settings = Settings.instance;
+  StreamSubscription<CallibriDevice?>? _currentDeviceSubscription;
+  CallibriDevice? _currentDevice;
 
-  Widget _buildCurrentDeviceStream({
-    required SingleDeviceController controller,
-    required Widget Function(
-      BuildContext context,
-      CallibriDevice? currentDevice,
-    )
+  // Widget _buildCurrentDeviceStream({
+  //   required CallibriSingleController controller,
+  //   required Widget Function(
+  //     BuildContext context,
+  //     CallibriDevice? currentDevice,
+  //   )
+  //   builder,
+  // }) => StreamBuilder(
+  //   stream: controller.currentDeviceStream,
+  //   initialData: controller.currentDevice,
+  //   builder: (context, snapshot) =>
+  //       builder(context, snapshot.data ?? controller.currentDevice),
+  // );
+
+  Widget _buildBatterPowerStream({
+    required CallibriDevice device,
+    required Widget Function(BuildContext context, int? batteryPower) builder,
+  }) => StreamBuilder(
+    stream: device.batteryPowerStream,
+    initialData: device.batteryPower,
+    builder: (context, snapshot) =>
+        builder(context, snapshot.data ?? device.batteryPower),
+  );
+
+  Widget _buildIsActiveStream({
+    required CallibriDevice device,
+    required Widget Function(BuildContext context, bool isActive) builder,
+  }) => StreamBuilder(
+    stream: device.isActiveStream,
+    initialData: device.isActive,
+    builder: (context, snapshot) =>
+        builder(context, snapshot.data ?? device.isActive),
+  );
+
+  Widget _buildMode({
+    required GyroscopeController controller,
+    required Widget Function(BuildContext context, GyroscopeControllerMode mode)
     builder,
   }) => StreamBuilder(
-    stream: controller.currentDeviceStream,
-    initialData: controller.currentDevice,
+    stream: controller.modeStream,
+    initialData: controller.mode,
     builder: (context, snapshot) =>
-        builder(context, snapshot.data ?? controller.currentDevice),
+        builder(context, snapshot.data ?? controller.mode),
   );
+
+  void _onCurrentDeviceChanged(CallibriDevice? currentDevice) {
+    setState(() => _currentDevice = currentDevice);
+    _didChangeDevice(currentDevice);
+  }
+
+  void _onSamplingFrequencyChanged() {
+    widget.controller.samplingFrequency = _settings.samplingFrequency;
+  }
+
+  void _didChangeDevice(CallibriDevice? currentDevice) {
+    currentDevice?.memsDataStream.listen((event) {
+      widget.gyroscopeController.addMemsData(event);
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _currentDevice = widget.controller.currentDevice;
+    _currentDeviceSubscription = widget.controller.currentDeviceStream.listen(
+      _onCurrentDeviceChanged,
+    );
+    _settings.onSamplingFrequencyChanged.addListener(
+      _onSamplingFrequencyChanged,
+    );
+    widget.controller.samplingFrequency = _settings.samplingFrequency;
+    _didChangeDevice(_currentDevice);
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      _currentDeviceSubscription?.cancel();
+      _currentDeviceSubscription = widget.controller.currentDeviceStream.listen(
+        _onCurrentDeviceChanged,
+      );
+      _currentDevice = widget.controller.currentDevice;
+      _didChangeDevice(_currentDevice);
+    }
+  }
+
+  @override
+  void dispose() {
+    _settings.onSamplingFrequencyChanged.removeListener(
+      _onSamplingFrequencyChanged,
+    );
+    _currentDeviceSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -530,228 +749,439 @@ class _HomeViewState extends State<HomeView> {
     final elevationTheme = ElevationTheme.of(context);
     final typescaleTheme = TypescaleTheme.of(context);
     final backgroundColor = colorTheme.surfaceContainer;
-    return _buildCurrentDeviceStream(
-      controller: widget.controller,
-      builder: (context, currentDevice) {
-        return Scaffold(
-          backgroundColor: backgroundColor,
-          body: CustomScrollView(
-            slivers: [
-              CustomAppBar(
-                type: .small,
-                collapsedContainerColor: backgroundColor,
-                expandedContainerColor: backgroundColor,
-                collapsedPadding: const .fromLTRB(
-                  12.0 + 52.0 + 12.0,
-                  0.0,
-                  12.0 + 52.0 + 12.0,
-                  0.0,
-                ),
-                leading: Padding(
-                  padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
-                  child: Flex.horizontal(
+    final currentDevice = _currentDevice;
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: CustomScrollView(
+        slivers: [
+          CustomAppBar(
+            type: .small,
+            collapsedContainerColor: backgroundColor,
+            expandedContainerColor: backgroundColor,
+            collapsedPadding: const .fromLTRB(
+              12.0 + 52.0 + 12.0,
+              0.0,
+              12.0 + 52.0 + 12.0,
+              0.0,
+            ),
+            leading: Padding(
+              padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
+              child: Flex.horizontal(
+                children: [
+                  // ListenableBuilder(
+                  //   listenable: _settings.onAlwaysOnTopChanged,
+                  //   builder: (context, child) => IconButton(
+                  //     style: LegacyThemeFactory.createIconButtonStyle(
+                  //       colorTheme: colorTheme,
+                  //       elevationTheme: elevationTheme,
+                  //       shapeTheme: shapeTheme,
+                  //       stateTheme: stateTheme,
+                  //       typescaleTheme: typescaleTheme,
+                  //       color: .standard,
+                  //       unselectedContainerColor:
+                  //           colorTheme.surfaceContainerHighest,
+                  //       selectedContainerColor:
+                  //           colorTheme.surfaceContainerHighest,
+                  //       isSelected: _settings.alwaysOnTop,
+                  //     ),
+                  //     onPressed: () =>
+                  //         _settings.alwaysOnTop = !_settings.alwaysOnTop,
+                  //     icon: IconLegacy(
+                  //       Symbols.keep_rounded,
+                  //       fill: _settings.alwaysOnTop ? 1.0 : 0.0,
+                  //     ),
+                  //     tooltip: "Поверх других окон",
+                  //   ),
+                  // ),
+                  // const SizedBox(width: 8.0 - 4.0),
+                  IconButton(
+                    style: LegacyThemeFactory.createIconButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      width: .wide,
+                      color: .filled,
+                      unselectedContainerColor:
+                          colorTheme.surfaceContainerHighest,
+                      isSelected: false,
+                    ),
+                    onPressed: () {},
+                    icon: const IconLegacy(Symbols.menu_rounded, fill: 1.0),
+                  ),
+                ],
+              ),
+            ),
+            title: const Text("CGS2025", textAlign: .center),
+            trailing: Padding(
+              padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
+              child: Flex.horizontal(
+                children: [
+                  // ListenableBuilder(
+                  //   listenable: _settings.onAlwaysOnTopChanged,
+                  //   builder: (context, child) => IconButton(
+                  //     style: LegacyThemeFactory.createIconButtonStyle(
+                  //       colorTheme: colorTheme,
+                  //       elevationTheme: elevationTheme,
+                  //       shapeTheme: shapeTheme,
+                  //       stateTheme: stateTheme,
+                  //       typescaleTheme: typescaleTheme,
+                  //       color: .standard,
+                  //       unselectedContainerColor:
+                  //           colorTheme.surfaceContainerHighest,
+                  //       selectedContainerColor:
+                  //           colorTheme.surfaceContainerHighest,
+                  //       isSelected: _settings.alwaysOnTop,
+                  //     ),
+                  //     onPressed: () =>
+                  //         _settings.alwaysOnTop = !_settings.alwaysOnTop,
+                  //     icon: IconLegacy(
+                  //       Symbols.keep_rounded,
+                  //       fill: _settings.alwaysOnTop ? 1.0 : 0.0,
+                  //     ),
+                  //     tooltip: "Поверх других окон",
+                  //   ),
+                  // ),
+                  // const SizedBox(width: 8.0 - 4.0),
+                  IconButton(
+                    style: LegacyThemeFactory.createIconButtonStyle(
+                      colorTheme: colorTheme,
+                      elevationTheme: elevationTheme,
+                      shapeTheme: shapeTheme,
+                      stateTheme: stateTheme,
+                      typescaleTheme: typescaleTheme,
+                      width: .wide,
+                      color: .filled,
+                      unselectedContainerColor:
+                          colorTheme.surfaceContainerHighest,
+                      isSelected: false,
+                    ),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (context) => const SettingsView(),
+                      ),
+                    ),
+                    icon: const IconLegacy(Symbols.settings_rounded, fill: 1.0),
+                    tooltip: "Настройки",
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (currentDevice != null)
+            SliverList.list(
+              children: [
+                Padding(
+                  padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                  child: Flex.vertical(
+                    crossAxisAlignment: .stretch,
+                    spacing: 2.0,
                     children: [
-                      // ListenableBuilder(
-                      //   listenable: _settings.onAlwaysOnTopChanged,
-                      //   builder: (context, child) => IconButton(
-                      //     style: LegacyThemeFactory.createIconButtonStyle(
-                      //       colorTheme: colorTheme,
-                      //       elevationTheme: elevationTheme,
-                      //       shapeTheme: shapeTheme,
-                      //       stateTheme: stateTheme,
-                      //       typescaleTheme: typescaleTheme,
-                      //       color: .standard,
-                      //       unselectedContainerColor:
-                      //           colorTheme.surfaceContainerHighest,
-                      //       selectedContainerColor:
-                      //           colorTheme.surfaceContainerHighest,
-                      //       isSelected: _settings.alwaysOnTop,
-                      //     ),
-                      //     onPressed: () =>
-                      //         _settings.alwaysOnTop = !_settings.alwaysOnTop,
-                      //     icon: IconLegacy(
-                      //       Symbols.keep_rounded,
-                      //       fill: _settings.alwaysOnTop ? 1.0 : 0.0,
-                      //     ),
-                      //     tooltip: "Поверх других окон",
-                      //   ),
-                      // ),
-                      // const SizedBox(width: 8.0 - 4.0),
-                      IconButton(
-                        style: LegacyThemeFactory.createIconButtonStyle(
-                          colorTheme: colorTheme,
-                          elevationTheme: elevationTheme,
-                          shapeTheme: shapeTheme,
-                          stateTheme: stateTheme,
-                          typescaleTheme: typescaleTheme,
-                          width: .wide,
-                          color: .filled,
-                          unselectedContainerColor:
-                              colorTheme.surfaceContainerHighest,
-                          isSelected: false,
+                      ListItemContainer(
+                        isFirst: true,
+                        child: ListItemLayout(
+                          isMultiline: true,
+                          leading: Icon(
+                            Symbols.label_rounded,
+                            fill: 1.0,
+                            color: colorTheme.primary,
+                          ),
+                          overline: Text(
+                            "Имя устройства",
+                            style: TextStyle(color: colorTheme.onSurface),
+                          ),
+                          headline: Text(
+                            currentDevice.name,
+                            style: TextStyle(color: colorTheme.primary),
+                          ),
                         ),
-                        onPressed: () {},
-                        icon: const IconLegacy(Symbols.menu_rounded, fill: 1.0),
+                      ),
+
+                      ListItemContainer(
+                        child: ListItemLayout(
+                          isMultiline: true,
+                          leading: Icon(
+                            Symbols.id_card_rounded,
+                            fill: 1.0,
+                            color: colorTheme.primary,
+                          ),
+                          overline: Text(
+                            "Идентификатор устройства",
+                            style: TextStyle(color: colorTheme.onSurface),
+                          ),
+                          headline: Text(
+                            currentDevice.address,
+                            style: TextStyle(color: colorTheme.primary),
+                          ),
+                        ),
+                      ),
+
+                      ListItemContainer(
+                        child: ListItemLayout(
+                          isMultiline: true,
+                          leading: Icon(
+                            Symbols.package_2_rounded,
+                            fill: 1.0,
+                            color: colorTheme.primary,
+                          ),
+                          overline: Text(
+                            "Семейство устройства",
+                            style: TextStyle(color: colorTheme.onSurface),
+                          ),
+                          headline: Text(
+                            "Callibri SDK",
+                            style: TextStyle(color: colorTheme.primary),
+                          ),
+                        ),
+                      ),
+
+                      _buildBatterPowerStream(
+                        device: currentDevice,
+                        builder: (context, batteryPower) {
+                          final value = batteryPower != null
+                              ? clampDouble(batteryPower / 100.0, 0.0, 100.0)
+                              : 1.0;
+                          final valuePercent = (value * 100.0).round();
+                          return ListItemContainer(
+                            isLast: true,
+                            child: ListItemLayout(
+                              isMultiline: true,
+                              leading: Icon(
+                                Symbols.battery_android_full_rounded,
+                                fill: 1.0,
+                                color: colorTheme.primary,
+                              ),
+                              overline: Text(
+                                "Уровень заряда батареи",
+                                style: TextStyle(color: colorTheme.onSurface),
+                              ),
+                              headline: Text(
+                                batteryPower != null
+                                    ? "$valuePercent%"
+                                    : "Неизвестен",
+                                style: TextStyle(color: colorTheme.primary),
+                              ),
+                              trailing: batteryPower != null
+                                  ? SizedBox.square(
+                                      dimension: 40.0,
+                                      child: CircularProgressIndicator(
+                                        padding: .zero,
+                                        value: kDebugMode ? value / 2 : value,
+                                        backgroundColor: Colors.transparent,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
                 ),
-                title: const Text("CGS2025", textAlign: .center),
-                trailing: Padding(
-                  padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
-                  child: Flex.horizontal(
+                const SizedBox(height: 16.0),
+                Padding(
+                  padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                  child: Flex.vertical(
+                    crossAxisAlignment: .stretch,
                     children: [
-                      // ListenableBuilder(
-                      //   listenable: _settings.onAlwaysOnTopChanged,
-                      //   builder: (context, child) => IconButton(
-                      //     style: LegacyThemeFactory.createIconButtonStyle(
-                      //       colorTheme: colorTheme,
-                      //       elevationTheme: elevationTheme,
-                      //       shapeTheme: shapeTheme,
-                      //       stateTheme: stateTheme,
-                      //       typescaleTheme: typescaleTheme,
-                      //       color: .standard,
-                      //       unselectedContainerColor:
-                      //           colorTheme.surfaceContainerHighest,
-                      //       selectedContainerColor:
-                      //           colorTheme.surfaceContainerHighest,
-                      //       isSelected: _settings.alwaysOnTop,
-                      //     ),
-                      //     onPressed: () =>
-                      //         _settings.alwaysOnTop = !_settings.alwaysOnTop,
-                      //     icon: IconLegacy(
-                      //       Symbols.keep_rounded,
-                      //       fill: _settings.alwaysOnTop ? 1.0 : 0.0,
-                      //     ),
-                      //     tooltip: "Поверх других окон",
-                      //   ),
-                      // ),
-                      // const SizedBox(width: 8.0 - 4.0),
-                      IconButton(
-                        style: LegacyThemeFactory.createIconButtonStyle(
+                      _buildIsActiveStream(
+                        device: currentDevice,
+                        builder: (context, isActive) => FilledButton(
+                          style: LegacyThemeFactory.createButtonStyle(
+                            colorTheme: colorTheme,
+                            elevationTheme: elevationTheme,
+                            shapeTheme: shapeTheme,
+                            stateTheme: stateTheme,
+                            typescaleTheme: typescaleTheme,
+                            size: .medium,
+                            shape: .round,
+                            color: .filled,
+                            selectedContainerColor: colorTheme.primary,
+                            unselectedContainerColor: colorTheme.primary,
+                            selectedContentColor: colorTheme.onPrimary,
+                            unselectedContentColor: colorTheme.onPrimary,
+                            isSelected: isActive,
+                          ),
+                          onPressed: () async {
+                            if (isActive) {
+                              widget.controller.stopData();
+                            } else {
+                              widget.controller.startData();
+                            }
+                          },
+                          child: Flex.horizontal(
+                            mainAxisSize: .min,
+                            spacing: 8.0,
+                            children: [
+                              isActive
+                                  ? const IconLegacy(
+                                      Symbols.stop_rounded,
+                                      fill: 1.0,
+                                    )
+                                  : const IconLegacy(
+                                      Symbols.play_arrow_rounded,
+                                      fill: 1.0,
+                                    ),
+                              Text("Старт"),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8.0),
+                      _buildMode(
+                        controller: widget.gyroscopeController,
+                        builder: (context, mode) => FilledButton(
+                          style: LegacyThemeFactory.createButtonStyle(
+                            colorTheme: colorTheme,
+                            elevationTheme: elevationTheme,
+                            shapeTheme: shapeTheme,
+                            stateTheme: stateTheme,
+                            typescaleTheme: typescaleTheme,
+                            size: .medium,
+                            shape: .round,
+                            color: .tonal,
+                          ),
+                          onPressed: () {
+                            widget.gyroscopeController.mode = switch (mode) {
+                              .calibration => .calculation,
+                              .calculation => .calibration,
+                            };
+                          },
+                          child: Flex.horizontal(
+                            mainAxisSize: .min,
+                            spacing: 8.0,
+                            children: [
+                              IconLegacy(
+                                Symbols.compass_calibration_rounded,
+                                fill: 1.0,
+                              ),
+                              mode == .calibration
+                                  ? Text("ФФФФ")
+                                  : Text("Калибровать"),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8.0 - 4.0),
+                      FilledButton(
+                        style: LegacyThemeFactory.createButtonStyle(
                           colorTheme: colorTheme,
                           elevationTheme: elevationTheme,
                           shapeTheme: shapeTheme,
                           stateTheme: stateTheme,
                           typescaleTheme: typescaleTheme,
-                          width: .wide,
+                          size: .small,
+                          shape: .round,
+                          containerColor: colorTheme.errorContainer,
+                          contentColor: colorTheme.onErrorContainer,
+                        ),
+                        onPressed: () {},
+                        child: const Flex.horizontal(
+                          mainAxisSize: .min,
+                          spacing: 8.0,
+                          children: [
+                            IconLegacy(Symbols.close_rounded),
+                            Text("Отсоединиться"),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          else
+            SliverPadding(
+              padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
+              sliver: SliverFillRemaining(
+                fillOverscroll: false,
+                hasScrollBody: false,
+                child: Flex.vertical(
+                  mainAxisAlignment: .center,
+                  crossAxisAlignment: .stretch,
+                  children: [
+                    Align.center(
+                      child: SizedBox(
+                        width: 128.0,
+                        height: 96.0,
+                        child: Material(
+                          animationDuration: .zero,
+                          clipBehavior: .antiAlias,
+                          shape: CornersBorder.rounded(
+                            corners: .all(shapeTheme.corner.full),
+                          ),
+                          color: colorTheme.primaryContainer,
+                          child: Icon(
+                            Symbols.nest_hello_doorbell_rounded,
+                            fill: 1.0,
+                            opticalSize: 32.0,
+                            size: 32.0,
+                            color: colorTheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8.0),
+                    Text(
+                      "Добавление устройства",
+                      textAlign: .center,
+                      style: typescaleTheme.bodyLarge.toTextStyle(
+                        color: colorTheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4.0),
+                    Text(
+                      "Для начала работы подключитесь к устройству Callibri",
+                      textAlign: .center,
+                      style: typescaleTheme.bodyMedium.toTextStyle(
+                        color: colorTheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16.0),
+                    Align.center(
+                      child: FilledButton(
+                        style: LegacyThemeFactory.createButtonStyle(
+                          colorTheme: colorTheme,
+                          elevationTheme: elevationTheme,
+                          shapeTheme: shapeTheme,
+                          stateTheme: stateTheme,
+                          typescaleTheme: typescaleTheme,
+                          size: .medium,
+                          shape: .square,
                           color: .filled,
-                          unselectedContainerColor:
-                              colorTheme.surfaceContainerHighest,
-                          isSelected: false,
                         ),
                         onPressed: () => Navigator.push(
                           context,
-                          MaterialPageRoute<void>(
-                            builder: (context) => const SettingsView(),
+                          MaterialPageRoute<Object?>(
+                            builder: (context) =>
+                                DevicesView(controller: widget.controller),
                           ),
                         ),
-                        icon: const IconLegacy(
-                          Symbols.settings_rounded,
-                          fill: 1.0,
+                        child: Flex.horizontal(
+                          mainAxisSize: .min,
+                          spacing: 8.0,
+                          children: [
+                            const IconLegacy(Symbols.add_rounded),
+                            const Text("Подключиться"),
+                          ],
                         ),
-                        tooltip: "Настройки",
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              if (currentDevice != null)
-                SliverList.list(
-                  children: [Text("${currentDevice.batteryPower}")],
-                )
-              else
-                SliverPadding(
-                  padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
-                  sliver: SliverFillRemaining(
-                    fillOverscroll: false,
-                    hasScrollBody: false,
-                    child: Flex.vertical(
-                      mainAxisAlignment: .center,
-                      crossAxisAlignment: .stretch,
-                      children: [
-                        Align.center(
-                          child: SizedBox(
-                            width: 128.0,
-                            height: 96.0,
-                            child: Material(
-                              animationDuration: .zero,
-                              clipBehavior: .antiAlias,
-                              shape: CornersBorder.rounded(
-                                corners: .all(shapeTheme.corner.full),
-                              ),
-                              color: colorTheme.primaryContainer,
-                              child: Icon(
-                                Symbols.nest_hello_doorbell_rounded,
-                                fill: 1.0,
-                                opticalSize: 32.0,
-                                size: 32.0,
-                                color: colorTheme.onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8.0),
-                        Text(
-                          "Добавление устройства",
-                          textAlign: .center,
-                          style: typescaleTheme.bodyLarge.toTextStyle(
-                            color: colorTheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 4.0),
-                        Text(
-                          "Для начала работы подключитесь к устройству Callibri",
-                          textAlign: .center,
-                          style: typescaleTheme.bodyMedium.toTextStyle(
-                            color: colorTheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 16.0),
-                        Align.center(
-                          child: FilledButton(
-                            style: LegacyThemeFactory.createButtonStyle(
-                              colorTheme: colorTheme,
-                              elevationTheme: elevationTheme,
-                              shapeTheme: shapeTheme,
-                              stateTheme: stateTheme,
-                              typescaleTheme: typescaleTheme,
-                              size: .medium,
-                              shape: .square,
-                              color: .filled,
-                            ),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute<Object?>(
-                                builder: (context) =>
-                                    DevicesView(controller: widget.controller),
-                              ),
-                            ),
-                            child: Flex.horizontal(
-                              mainAxisSize: .min,
-                              spacing: 8.0,
-                              children: [
-                                const IconLegacy(Symbols.add_rounded),
-                                const Text("Подключиться"),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
+            ),
+        ],
+      ),
     );
   }
 }
 
 class DevicesView extends StatefulWidget {
   const DevicesView({super.key, required this.controller});
-  final SingleDeviceController controller;
+  final CallibriSingleController controller;
 
   @override
   State<DevicesView> createState() => _DevicesViewState();
@@ -782,7 +1212,7 @@ class _DevicesViewState extends State<DevicesView> {
   }
 
   Widget _buildIsScanningStream({
-    required SingleDeviceController controller,
+    required CallibriSingleController controller,
     required Widget Function(BuildContext context, bool isScanning) builder,
   }) => StreamBuilder(
     stream: controller.isScanningStream,
@@ -793,7 +1223,7 @@ class _DevicesViewState extends State<DevicesView> {
     },
   );
   Widget _buildDevicesStream({
-    required SingleDeviceController controller,
+    required CallibriSingleController controller,
     required Widget Function(
       BuildContext context,
       List<CallibriDevice>? devices,

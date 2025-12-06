@@ -15,7 +15,8 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> with WindowListener, TrayListener {
   final _settings = Settings.instance;
-  late SingleDeviceController _controller;
+  late CallibriSingleController _controller;
+  late GyroscopeController _gyroscopeController;
 
   ColorThemeData _createColorTheme({
     required Brightness brightness,
@@ -102,7 +103,10 @@ class _AppState extends State<App> with WindowListener, TrayListener {
       builder: _buildHomeWrapper,
       home: kDebugUi
           ? const app_ui_debug.mainPage()
-          : HomeView(controller: _controller),
+          : HomeView(
+              controller: _controller,
+              gyroscopeController: _gyroscopeController,
+            ),
     );
   }
 
@@ -156,20 +160,24 @@ class _AppState extends State<App> with WindowListener, TrayListener {
   @override
   void initState() {
     super.initState();
+    _controller = CallibriSingleController();
+    _gyroscopeController = GyroscopeController(buffer: 15);
+
     windowManager.addListener(this);
     trayManager.addListener(this);
     _settings.onThemeModeChanged.addListener(_themeModeListener);
     _settings.onAlwaysOnTopChanged.addListener(_alwaysOnTopListener);
-    _controller = SingleDeviceController();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
     _settings.onAlwaysOnTopChanged.removeListener(_alwaysOnTopListener);
     _settings.onThemeModeChanged.removeListener(_themeModeListener);
     trayManager.removeListener(this);
     windowManager.removeListener(this);
+
+    _gyroscopeController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 

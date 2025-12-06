@@ -34,6 +34,7 @@ dependencies:
   shared_preferences: ^2.5.3
   bixat_key_mouse: ^1.0.3
   win32: ^5.15.0
+  vector_math: ^2.2.0
 
 dev_dependencies:
   flutter_test:

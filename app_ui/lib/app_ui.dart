@@ -508,6 +508,20 @@ class HomeView extends StatefulWidget {
 class _HomeViewState extends State<HomeView> {
   final _settings = Settings.instance;
 
+  Widget _buildCurrentDeviceStream({
+    required SingleDeviceController controller,
+    required Widget Function(
+      BuildContext context,
+      CallibriDevice? currentDevice,
+    )
+    builder,
+  }) => StreamBuilder(
+    stream: controller.currentDeviceStream,
+    initialData: controller.currentDevice,
+    builder: (context, snapshot) =>
+        builder(context, snapshot.data ?? controller.currentDevice),
+  );
+
   @override
   Widget build(BuildContext context) {
     final colorTheme = ColorTheme.of(context);
@@ -516,118 +530,221 @@ class _HomeViewState extends State<HomeView> {
     final elevationTheme = ElevationTheme.of(context);
     final typescaleTheme = TypescaleTheme.of(context);
     final backgroundColor = colorTheme.surfaceContainer;
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          CustomAppBar(
-            type: .small,
-            collapsedContainerColor: backgroundColor,
-            expandedContainerColor: backgroundColor,
-            title: const Text("Callibri"),
-            collapsedPadding: const .fromLTRB(
-              16.0,
-              0.0,
-              12.0 + 40.0 + 12.0,
-              0.0,
-            ),
-            trailing: Padding(
-              padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
-              child: Flex.horizontal(
-                children: [
-                  ListenableBuilder(
-                    listenable: _settings.onAlwaysOnTopChanged,
-                    builder: (context, child) => IconButton(
-                      style: LegacyThemeFactory.createIconButtonStyle(
-                        colorTheme: colorTheme,
-                        elevationTheme: elevationTheme,
-                        shapeTheme: shapeTheme,
-                        stateTheme: stateTheme,
-                        typescaleTheme: typescaleTheme,
-                        color: .standard,
-                        unselectedContainerColor:
-                            colorTheme.surfaceContainerHighest,
-                        selectedContainerColor:
-                            colorTheme.surfaceContainerHighest,
-                        isSelected: _settings.alwaysOnTop,
+    return _buildCurrentDeviceStream(
+      controller: widget.controller,
+      builder: (context, currentDevice) {
+        return Scaffold(
+          backgroundColor: backgroundColor,
+          body: CustomScrollView(
+            slivers: [
+              CustomAppBar(
+                type: .small,
+                collapsedContainerColor: backgroundColor,
+                expandedContainerColor: backgroundColor,
+                collapsedPadding: const .fromLTRB(
+                  12.0 + 52.0 + 12.0,
+                  0.0,
+                  12.0 + 52.0 + 12.0,
+                  0.0,
+                ),
+                leading: Padding(
+                  padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
+                  child: Flex.horizontal(
+                    children: [
+                      // ListenableBuilder(
+                      //   listenable: _settings.onAlwaysOnTopChanged,
+                      //   builder: (context, child) => IconButton(
+                      //     style: LegacyThemeFactory.createIconButtonStyle(
+                      //       colorTheme: colorTheme,
+                      //       elevationTheme: elevationTheme,
+                      //       shapeTheme: shapeTheme,
+                      //       stateTheme: stateTheme,
+                      //       typescaleTheme: typescaleTheme,
+                      //       color: .standard,
+                      //       unselectedContainerColor:
+                      //           colorTheme.surfaceContainerHighest,
+                      //       selectedContainerColor:
+                      //           colorTheme.surfaceContainerHighest,
+                      //       isSelected: _settings.alwaysOnTop,
+                      //     ),
+                      //     onPressed: () =>
+                      //         _settings.alwaysOnTop = !_settings.alwaysOnTop,
+                      //     icon: IconLegacy(
+                      //       Symbols.keep_rounded,
+                      //       fill: _settings.alwaysOnTop ? 1.0 : 0.0,
+                      //     ),
+                      //     tooltip: "Поверх других окон",
+                      //   ),
+                      // ),
+                      // const SizedBox(width: 8.0 - 4.0),
+                      IconButton(
+                        style: LegacyThemeFactory.createIconButtonStyle(
+                          colorTheme: colorTheme,
+                          elevationTheme: elevationTheme,
+                          shapeTheme: shapeTheme,
+                          stateTheme: stateTheme,
+                          typescaleTheme: typescaleTheme,
+                          width: .wide,
+                          color: .filled,
+                          unselectedContainerColor:
+                              colorTheme.surfaceContainerHighest,
+                          isSelected: false,
+                        ),
+                        onPressed: () {},
+                        icon: const IconLegacy(Symbols.menu_rounded, fill: 1.0),
                       ),
-                      onPressed: () =>
-                          _settings.alwaysOnTop = !_settings.alwaysOnTop,
-                      icon: IconLegacy(
-                        Symbols.keep_rounded,
-                        fill: _settings.alwaysOnTop ? 1.0 : 0.0,
-                      ),
-                      tooltip: "Настройки",
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 8.0 - 4.0),
-                  IconButton(
-                    style: LegacyThemeFactory.createIconButtonStyle(
-                      colorTheme: colorTheme,
-                      elevationTheme: elevationTheme,
-                      shapeTheme: shapeTheme,
-                      stateTheme: stateTheme,
-                      typescaleTheme: typescaleTheme,
-                      width: .wide,
-                      color: .filled,
-                      unselectedContainerColor:
-                          colorTheme.surfaceContainerHighest,
-                      isSelected: false,
-                    ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (context) => const SettingsView(),
+                ),
+                title: const Text("CGS2025", textAlign: .center),
+                trailing: Padding(
+                  padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
+                  child: Flex.horizontal(
+                    children: [
+                      // ListenableBuilder(
+                      //   listenable: _settings.onAlwaysOnTopChanged,
+                      //   builder: (context, child) => IconButton(
+                      //     style: LegacyThemeFactory.createIconButtonStyle(
+                      //       colorTheme: colorTheme,
+                      //       elevationTheme: elevationTheme,
+                      //       shapeTheme: shapeTheme,
+                      //       stateTheme: stateTheme,
+                      //       typescaleTheme: typescaleTheme,
+                      //       color: .standard,
+                      //       unselectedContainerColor:
+                      //           colorTheme.surfaceContainerHighest,
+                      //       selectedContainerColor:
+                      //           colorTheme.surfaceContainerHighest,
+                      //       isSelected: _settings.alwaysOnTop,
+                      //     ),
+                      //     onPressed: () =>
+                      //         _settings.alwaysOnTop = !_settings.alwaysOnTop,
+                      //     icon: IconLegacy(
+                      //       Symbols.keep_rounded,
+                      //       fill: _settings.alwaysOnTop ? 1.0 : 0.0,
+                      //     ),
+                      //     tooltip: "Поверх других окон",
+                      //   ),
+                      // ),
+                      // const SizedBox(width: 8.0 - 4.0),
+                      IconButton(
+                        style: LegacyThemeFactory.createIconButtonStyle(
+                          colorTheme: colorTheme,
+                          elevationTheme: elevationTheme,
+                          shapeTheme: shapeTheme,
+                          stateTheme: stateTheme,
+                          typescaleTheme: typescaleTheme,
+                          width: .wide,
+                          color: .filled,
+                          unselectedContainerColor:
+                              colorTheme.surfaceContainerHighest,
+                          isSelected: false,
+                        ),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (context) => const SettingsView(),
+                          ),
+                        ),
+                        icon: const IconLegacy(
+                          Symbols.settings_rounded,
+                          fill: 1.0,
+                        ),
+                        tooltip: "Настройки",
                       ),
-                    ),
-                    icon: const IconLegacy(Symbols.settings_rounded, fill: 1.0),
-                    tooltip: "Настройки",
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-          SliverFillRemaining(
-            fillOverscroll: false,
-            hasScrollBody: false,
-            child: Flex.vertical(
-              mainAxisAlignment: .center,
-              crossAxisAlignment: .stretch,
-              children: [
-                Align.center(
-                  child: FilledButton(
-                    style: LegacyThemeFactory.createButtonStyle(
-                      colorTheme: colorTheme,
-                      elevationTheme: elevationTheme,
-                      shapeTheme: shapeTheme,
-                      stateTheme: stateTheme,
-                      typescaleTheme: typescaleTheme,
-                      size: .medium,
-                      shape: .square,
-                      color: .filled,
-                    ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<Object?>(
-                        builder: (context) =>
-                            DevicesView(controller: widget.controller),
-                      ),
-                    ),
-                    child: Flex.horizontal(
-                      mainAxisSize: .min,
-                      spacing: 8.0,
+              if (currentDevice != null)
+                SliverList.list(
+                  children: [Text("${currentDevice.batteryPower}")],
+                )
+              else
+                SliverPadding(
+                  padding: const .fromLTRB(16.0, 0.0, 16.0, 0.0),
+                  sliver: SliverFillRemaining(
+                    fillOverscroll: false,
+                    hasScrollBody: false,
+                    child: Flex.vertical(
+                      mainAxisAlignment: .center,
+                      crossAxisAlignment: .stretch,
                       children: [
-                        const IconLegacy(Symbols.add_rounded),
-                        const Text("Подключиться"),
+                        Align.center(
+                          child: SizedBox(
+                            width: 128.0,
+                            height: 96.0,
+                            child: Material(
+                              animationDuration: .zero,
+                              clipBehavior: .antiAlias,
+                              shape: CornersBorder.rounded(
+                                corners: .all(shapeTheme.corner.full),
+                              ),
+                              color: colorTheme.primaryContainer,
+                              child: Icon(
+                                Symbols.nest_hello_doorbell_rounded,
+                                fill: 1.0,
+                                opticalSize: 32.0,
+                                size: 32.0,
+                                color: colorTheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8.0),
+                        Text(
+                          "Добавление устройства",
+                          textAlign: .center,
+                          style: typescaleTheme.bodyLarge.toTextStyle(
+                            color: colorTheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4.0),
+                        Text(
+                          "Для начала работы подключитесь к устройству Callibri",
+                          textAlign: .center,
+                          style: typescaleTheme.bodyMedium.toTextStyle(
+                            color: colorTheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 16.0),
+                        Align.center(
+                          child: FilledButton(
+                            style: LegacyThemeFactory.createButtonStyle(
+                              colorTheme: colorTheme,
+                              elevationTheme: elevationTheme,
+                              shapeTheme: shapeTheme,
+                              stateTheme: stateTheme,
+                              typescaleTheme: typescaleTheme,
+                              size: .medium,
+                              shape: .square,
+                              color: .filled,
+                            ),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute<Object?>(
+                                builder: (context) =>
+                                    DevicesView(controller: widget.controller),
+                              ),
+                            ),
+                            child: Flex.horizontal(
+                              mainAxisSize: .min,
+                              spacing: 8.0,
+                              children: [
+                                const IconLegacy(Symbols.add_rounded),
+                                const Text("Подключиться"),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -1275,9 +1392,34 @@ class _SettingsViewState extends State<SettingsView> {
                   ),
                 ),
                 ListenableBuilder(
+                  listenable: _settings.onAlwaysOnTopChanged,
+                  builder: (context, _) => ListItemContainer(
+                    isFirst: true,
+                    child: ListItemInteraction(
+                      onTap: () =>
+                          _settings.alwaysOnTop = !_settings.alwaysOnTop,
+                      child: ListItemLayout(
+                        isMultiline: true,
+                        leading: const Icon(
+                          Symbols.select_window_rounded,
+                          fill: 1.0,
+                        ),
+                        headline: const Text("Поверх других окон"),
+                        supportingText: const Text(
+                          "Закрепить окно поверх других",
+                        ),
+                        trailing: Switch(
+                          onCheckedChanged: (value) =>
+                              _settings.alwaysOnTop = value,
+                          checked: _settings.alwaysOnTop,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ListenableBuilder(
                   listenable: _settings.onSamplingFrequencyChanged,
                   builder: (context, child) => ListItemContainer(
-                    isFirst: true,
                     child: Flex.vertical(
                       crossAxisAlignment: .stretch,
                       children: [

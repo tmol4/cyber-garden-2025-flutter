@@ -21,7 +21,7 @@ void main(List<String> arguments) async {
   await windowManager.ensureInitialized();
 
   final windowOptions = WindowOptions(
-    title: "Cyber Garden 2025",
+    title: "Cyber Garden School 2025",
     minimumSize: const Size(360.0, 640.0),
     size: const Size(412.0, 664.0),
     alwaysOnTop: settings.alwaysOnTop,
@@ -49,7 +49,7 @@ void main(List<String> arguments) async {
     ],
   );
   await trayManager.setIcon("assets/images/tray_icon.ico");
-  await trayManager.setToolTip("Cyber Garden 2025");
+  await trayManager.setToolTip("Cyber Garden School 2025");
   await trayManager.setContextMenu(menu);
 
   runApp(const App());

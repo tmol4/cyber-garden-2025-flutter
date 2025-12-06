@@ -1,10 +1,16 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import "package:neurosdk2/neurosdk2.dart";
+<<<<<<< HEAD
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import "chart_draw.dart";
 import 'dart:math';
+=======
+import 'package:app_logic/src/callibri_readings.dart';
+>>>>>>> oleg
 
 class mainPage extends StatefulWidget {
   const mainPage({super.key});
@@ -43,7 +49,12 @@ Random random = Random();
 class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
   bool isLoading = false;
   List<String> devices = [];
+<<<<<<< HEAD
   List <Offset> dots = [];
+=======
+  Callibri? currSens;
+
+>>>>>>> oleg
   void loadDevices() async {
     Scanner sc = await Scanner.create([
       FSensorFamily.leCallibri,
@@ -54,7 +65,7 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
       isLoading = true;
       devices = [];
     });
-    await Future.delayed(Duration(seconds: 2));
+    await Future.delayed(Duration(seconds: 5));
     await sc.stop();
     // List<FSensorInfo?> sensors = await sc.getSensors();
     List<String> newDevs = ["123"];
@@ -63,6 +74,7 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
       devices = newDevs;
       isLoading = false;
     });
+<<<<<<< HEAD
     // if (devices.isNotEmpty) {
     //   final currSens = await sc.createSensor(sensors.first!) as Callibri;
     //   await currSens.connect();
@@ -85,6 +97,27 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
     //   currSens.signalType.set(.EMG);
     //   currSens.execute(.startSignal);
     // }
+=======
+    if (devices.isNotEmpty) {
+      currSens = await sc.createSensor(sensors.first!) as Callibri;
+      await currSens?.connect();
+
+      currSens?.memsDataStream.listen((data) {
+        final Iterable<Point3D> gyro = data.map((e) => e.gyroscope, );
+        callibri_readings.set_gyro(gyro);
+      });
+
+      currSens?.signalDataStream.listen((data) {
+        final Iterable<List<double>> signal = data.map((e) => e.samples, );
+        callibri_readings.set_muscle_signal(signal);
+      });
+      currSens?.samplingFrequency.set(.hz1000);
+      currSens?.signalType.set(.EMG);
+      
+      currSens?.execute(.startMEMS);
+      currSens?.execute(.startSignal);
+    }
+>>>>>>> oleg
   }
 
   @override
@@ -118,8 +151,12 @@ class _SimpleDeviceLoaderState extends State<SimpleDeviceLoader> {
                   setState(() {
                     // devices = [];
                     //TODO: stop work
+<<<<<<< HEAD
                     dots.add(Offset(-random.nextDouble() * 10,
                                 -random.nextDouble() * 10,));
+=======
+                    currSens?.disconnect();
+>>>>>>> oleg
                   });
                 },
                 child: Text('Выключить'),

@@ -10,6 +10,9 @@ void main(List<String> arguments) async {
   // Initialize binding singletons
   WidgetsFlutterBinding.ensureInitialized();
 
+  await Settings.instance.loadAll();
+  await Settings.instance.saveAll();
+
   //
   await BixatKeyMouse.initialize();
 

@@ -14,12 +14,15 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> with WindowListener, TrayListener {
+  final _settings = Settings.instance;
+
   ColorThemeData _createColorTheme({
     required Brightness brightness,
     bool highContrast = false,
   }) {
     return ColorThemeData.fromSeed(
-      sourceColor: Color(0xFF148DC6),
+      // sourceColor: Color(0xFF148DC6), // From website
+      sourceColor: Color(0xFF1D59BC), // From case presentation
       brightness: brightness,
       contrastLevel: highContrast ? 1.0 : 0.0,
       variant: .vibrant,
@@ -29,7 +32,11 @@ class _AppState extends State<App> with WindowListener, TrayListener {
   }
 
   Widget _buildColorTheme(BuildContext context, Widget child) {
-    final brightness = MediaQuery.platformBrightnessOf(context);
+    final Brightness brightness = switch (_settings.themeMode) {
+      .system => MediaQuery.platformBrightnessOf(context),
+      .light => .light,
+      .dark => .dark,
+    };
     final highContrast = MediaQuery.highContrastOf(context);
     return ColorTheme(
       data: _createColorTheme(
@@ -62,7 +69,7 @@ class _AppState extends State<App> with WindowListener, TrayListener {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: "Cyber Garden 2025",
-      themeMode: .system,
+      themeMode: _settings.themeMode,
       theme: LegacyThemeFactory.createTheme(
         colorTheme: _createColorTheme(brightness: .light, highContrast: false),
         elevationTheme: elevationTheme,
@@ -94,6 +101,10 @@ class _AppState extends State<App> with WindowListener, TrayListener {
       builder: _buildHomeWrapper,
       home: kDebugUi ? const app_ui_debug.mainPage() : const HomeView(),
     );
+  }
+
+  void _themeModeListener() {
+    setState(() {});
   }
 
   @override
@@ -140,10 +151,12 @@ class _AppState extends State<App> with WindowListener, TrayListener {
     super.initState();
     windowManager.addListener(this);
     trayManager.addListener(this);
+    _settings.onThemeModeChanged.addListener(_themeModeListener);
   }
 
   @override
   void dispose() {
+    _settings.onThemeModeChanged.removeListener(_themeModeListener);
     trayManager.removeListener(this);
     windowManager.removeListener(this);
     super.dispose();

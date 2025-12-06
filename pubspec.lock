@@ -775,6 +775,62 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.0"
+  shared_preferences:
+    dependency: "direct main"
+    description:
+      name: shared_preferences
+      sha256: "6e8bf70b7fef813df4e9a36f658ac46d107db4b4cfe1048b477d4e453a8159f5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.5.3"
+  shared_preferences_android:
+    dependency: transitive
+    description:
+      name: shared_preferences_android
+      sha256: "83af5c682796c0f7719c2bbf74792d113e40ae97981b8f266fa84574573556bc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.18"
+  shared_preferences_foundation:
+    dependency: transitive
+    description:
+      name: shared_preferences_foundation
+      sha256: "4e7eaffc2b17ba398759f1151415869a34771ba11ebbccd1b0145472a619a64f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.5.6"
+  shared_preferences_linux:
+    dependency: transitive
+    description:
+      name: shared_preferences_linux
+      sha256: "580abfd40f415611503cae30adf626e6656dfb2f0cee8f465ece7b6defb40f2f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.1"
+  shared_preferences_platform_interface:
+    dependency: transitive
+    description:
+      name: shared_preferences_platform_interface
+      sha256: "57cbf196c486bc2cf1f02b85784932c6094376284b3ad5779d1b1c6c6a816b80"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.1"
+  shared_preferences_web:
+    dependency: transitive
+    description:
+      name: shared_preferences_web
+      sha256: c49bd060261c9a3f0ff445892695d6212ff603ef3115edbb448509d407600019
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.3"
+  shared_preferences_windows:
+    dependency: transitive
+    description:
+      name: shared_preferences_windows
+      sha256: "94ef0f72b2d71bc3e700e025db3710911bd51a71cefb65cc609dd0d9a982e3c1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.1"
   shelf:
     dependency: transitive
     description:
@@ -800,7 +856,7 @@ packages:
     source: hosted
     version: "0.1.2"
   simple_icons:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: simple_icons
       sha256: "2ca3cd79c9f12e97a8588cae0f342609f19fd2e82315356cb09b5c4987ad0808"
@@ -912,34 +968,34 @@ packages:
     dependency: transitive
     description:
       name: talker
-      sha256: "5ab800e29d91ce7728fa218c8a7d46f6c228202ac89af650c3f82cb938a64ba6"
+      sha256: "1f94c986b282ccb4efdb3bf0b2549bf314aa20c9e35cbde2c8111d6dd31a7b9a"
       url: "https://pub.dev"
     source: hosted
-    version: "5.1.3"
+    version: "5.1.4"
   talker_dio_logger:
     dependency: "direct main"
     description:
       name: talker_dio_logger
-      sha256: "214a31d2ecc488ae6abf623ca9dac3831d34e66195f633bd1909a9d0c282ab8c"
+      sha256: "775cad84e935f3c47b7cbfb07f1ab459850b2df28893eb798b1d537eea9feb34"
       url: "https://pub.dev"
     source: hosted
-    version: "5.1.3"
+    version: "5.1.4"
   talker_flutter:
     dependency: "direct main"
     description:
       name: talker_flutter
-      sha256: "79158cf0fe3fd2bcdb1dc6f5a870cb623f18d0b59a4fd87414f53ce446d80a45"
+      sha256: "60350aef6b2f5f66e9d1350dc6ab60f9800ab2c4904912f635899dae64f44229"
       url: "https://pub.dev"
     source: hosted
-    version: "5.1.3"
+    version: "5.1.4"
   talker_logger:
     dependency: transitive
     description:
       name: talker_logger
-      sha256: bc75612ace4dbb82fbad36181ff27e95b1ee152c719c2fea6b8ac59c4f091cd2
+      sha256: c2d58daa0d99518c83b4941967e7527dc4d98328b145bbf07a638bbaf4f0e039
       url: "https://pub.dev"
     source: hosted
-    version: "5.1.3"
+    version: "5.1.4"
   term_glyph:
     dependency: transitive
     description:

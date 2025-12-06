@@ -13,6 +13,7 @@ import 'package:app_ui/src/flutter.dart';
 import 'package:collection/collection.dart';
 import 'package:neurosdk2/neurosdk2.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
@@ -531,7 +532,7 @@ class _DevicesViewState extends State<DevicesView> {
                 ),
                 title: Text("Подключение"),
                 trailing: Padding(
-                  padding: const .fromLTRB(12.0 - 4.0, 0.0, 12.0 - 4.0, 0.0),
+                  padding: const .fromLTRB(12.0, 0.0, 12.0, 0.0),
                   child: IconButton(
                     style: LegacyThemeFactory.createIconButtonStyle(
                       colorTheme: colorTheme,
@@ -1235,5 +1236,100 @@ class _AboutViewState extends State<AboutView> {
         ],
       ),
     );
+  }
+}
+
+class _Notifier extends ChangeNotifier {
+  _Notifier() {
+    if (kFlutterMemoryAllocationsEnabled) {
+      ChangeNotifier.maybeDispatchObjectCreation(this);
+    }
+  }
+
+  void notify() => notifyListeners();
+}
+
+class Settings with ChangeNotifier {
+  Settings._({required SharedPreferencesAsync sharedPreferencesAsync})
+    : _prefs = sharedPreferencesAsync {
+    if (kFlutterMemoryAllocationsEnabled) {
+      ChangeNotifier.maybeDispatchObjectCreation(this);
+    }
+  }
+
+  final SharedPreferencesAsync _prefs;
+
+  ThemeMode _themeMode = .system;
+  ThemeMode get themeMode => _themeMode;
+  set themeMode(ThemeMode value) {
+    if (_themeMode == value) return;
+    _themeMode = value;
+    _themeModeNotifier.notify();
+    notifyListeners();
+    saveOnly(themeMode: true);
+  }
+
+  final _themeModeNotifier = _Notifier();
+  Listenable get onThemeModeChanged => _themeModeNotifier;
+
+  void _notifyAllListeners() {
+    _themeModeNotifier.notify();
+    notifyListeners();
+  }
+
+  Future<void> loadOnly({bool themeMode = false}) async {
+    final futures = <Future<bool>>[];
+    if (themeMode) {
+      final future = _prefs.getString("themeMode").then((data) {
+        final ThemeMode value = switch (data?.toLowerCase()) {
+          "light" => .light,
+          "dark" => .dark,
+          _ => .system,
+        };
+        if (_themeMode != value) {
+          _themeMode = value;
+          return true;
+        } else {
+          return false;
+        }
+      });
+      futures.add(future);
+    }
+    if (futures.isNotEmpty) {
+      final result = await Future.wait(futures);
+      if (result.contains(true)) {
+        _notifyAllListeners();
+      }
+    }
+  }
+
+  Future<void> loadAll() => loadOnly(themeMode: true);
+
+  Future<void> saveOnly({bool themeMode = false}) async {
+    final futures = <Future<void>>[];
+    if (themeMode) {
+      final value = _themeMode.name;
+      final future = _prefs.setString("themeMode", value);
+      futures.add(future);
+    }
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+    }
+  }
+
+  Future<void> saveAll() => saveOnly(themeMode: true);
+
+  static Settings? _instance;
+
+  static Settings get instance {
+    if (_instance case final instance?) return instance;
+    final instance = Settings._(
+      sharedPreferencesAsync: SharedPreferencesAsync(),
+    );
+    return _instance = instance;
+  }
+
+  static set instance(Settings value) {
+    instance = value;
   }
 }

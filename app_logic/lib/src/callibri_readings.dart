@@ -6,15 +6,12 @@ import 'package:bixat_key_mouse/bixat_key_mouse.dart';
 
 import 'package:app_logic/src/key_mouse_functions.dart';
 
-
-
-
 class CallibriReadings {
   Vector3 acceleration = Vector3.zero();
   double muscleSignal = 0.0;
 
   double mouseSens = 200.0;
-  double gyroSens = 0.1;
+  double gyroSens = 0.2;
   double scrollSens = 0.01;
   final double mouseMoveThreshold = 0.05;
   final double scrollThreshold = 0.4;
@@ -42,7 +39,11 @@ class CallibriReadings {
     // print(accelerationList.map((e) => e,));
 
     // calculations
-    Vector3 acceleration = Vector3(accelerationList.last.x, accelerationList.last.y, accelerationList.last.z);
+    Vector3 acceleration = Vector3(
+      accelerationList.last.x,
+      accelerationList.last.y,
+      accelerationList.last.z,
+    );
     Vector3 delta = acceleration - lastAcceleration;
     lastAcceleration = acceleration;
 
@@ -60,13 +61,17 @@ class CallibriReadings {
     // move mouse
     Vector3 movement = Vector3.zero();
 
-    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold) movement.x = delta.x;
-    if (delta.y > mouseMoveThreshold || delta.y < -mouseMoveThreshold) movement.y = delta.y;
-    move_mouse(-(movement.x * mouseSens).ceil(), -(movement.y * mouseSens).ceil());
+    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold)
+      movement.x = delta.x;
+    if (delta.y > mouseMoveThreshold || delta.y < -mouseMoveThreshold)
+      movement.y = delta.y;
+    move_mouse(
+      -(movement.x * mouseSens).ceil(),
+      -(movement.y * mouseSens).ceil(),
+    );
   }
 
   void set_gyro(Iterable<Point3D> gyro) {
-    
     // calculations
     Vector3 vel = Vector3(gyro.last.x, gyro.last.y, gyro.last.z);
     Vector3 delta = vel; // - lastVel;
@@ -86,8 +91,10 @@ class CallibriReadings {
     // move mouse
     Vector3 movement = Vector3.zero();
 
-    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold) movement.x = delta.x;
-    if (delta.y > mouseMoveThreshold || delta.y < -mouseMoveThreshold) movement.y = delta.y;
+    if (delta.x > mouseMoveThreshold || delta.x < -mouseMoveThreshold)
+      movement.y = -delta.x;
+    if (delta.z > mouseMoveThreshold || delta.z < -mouseMoveThreshold)
+      movement.x = delta.z;
     move_mouse(-(movement.x * gyroSens).ceil(), (movement.y * gyroSens).ceil());
   }
 
@@ -100,9 +107,6 @@ class CallibriReadings {
 
     print(avg_signal);
   }
-
-
 }
-
 
 CallibriReadings callibri_readings = CallibriReadings();

@@ -443,12 +443,6 @@ class _HomeViewState extends State<HomeView> {
   final _settings = Settings.instance;
 
   @override
-  void initState() {
-    super.initState();
-    // _test();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colorTheme = ColorTheme.of(context);
     final shapeTheme = ShapeTheme.of(context);

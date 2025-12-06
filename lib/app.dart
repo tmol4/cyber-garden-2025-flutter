@@ -107,6 +107,10 @@ class _AppState extends State<App> with WindowListener, TrayListener {
     setState(() {});
   }
 
+  void _alwaysOnTopListener() async {
+    windowManager.setAlwaysOnTop(_settings.alwaysOnTop);
+  }
+
   @override
   void onWindowClose() async {
     if (!kDebugMode) {
@@ -152,10 +156,12 @@ class _AppState extends State<App> with WindowListener, TrayListener {
     windowManager.addListener(this);
     trayManager.addListener(this);
     _settings.onThemeModeChanged.addListener(_themeModeListener);
+    _settings.onAlwaysOnTopChanged.addListener(_alwaysOnTopListener);
   }
 
   @override
   void dispose() {
+    _settings.onAlwaysOnTopChanged.removeListener(_alwaysOnTopListener);
     _settings.onThemeModeChanged.removeListener(_themeModeListener);
     trayManager.removeListener(this);
     windowManager.removeListener(this);

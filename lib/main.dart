@@ -32,7 +32,7 @@ void main(List<String> arguments) async {
       windowManager.setResizable(true),
     ]);
     await windowManager.show();
-    await windowManager.focus();
+    if (!kDebugMode) await windowManager.focus();
   });
 
   // Tray
